@@ -9,6 +9,17 @@ class PayPalError(Exception):
     pass
 
 
+class PayPalUnknown(PayPalError):
+    """PayPal may or may not have acted (timeout, network error, 5xx). Retry with the same PayPal-Request-Id."""
+
+
+class CapturePending(PayPalError):
+    """PayPal accepted the capture but it is not COMPLETED yet (e.g. under review). Carries the capture id."""
+    def __init__(self, capture_id, status="PENDING"):
+        super().__init__(f"capture {capture_id} is {status}, not COMPLETED yet")
+        self.capture_id, self.status = capture_id, status
+
+
 class PayPalClient:
     """Real client. Needs PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET of a *sandbox* REST app."""
     mode = "sandbox"
@@ -42,9 +53,10 @@ class PayPalClient:
             if e.code == 401 and _retry and auth is None:  # token expired: fetch a new one once
                 self._tok = None
                 return self._call(method, path, body, headers, form, auth, _retry=False)
-            raise PayPalError(f"{e.code} {e.read().decode()[:300]}")
+            cls = PayPalUnknown if e.code >= 500 else PayPalError
+            raise cls(f"{e.code} {e.read().decode()[:300]}")
         except (urllib.error.URLError, TimeoutError, OSError) as e:
-            raise PayPalError(f"network error talking to PayPal: {e}")
+            raise PayPalUnknown(f"network error talking to PayPal: {e}")
 
     def _token(self):
         if not self._tok:
@@ -79,9 +91,16 @@ class PayPalClient:
             cap = r["purchase_units"][0]["payments"]["captures"][0]
         except (KeyError, IndexError, TypeError):
             raise PayPalError(f"capture response had no capture (order status {r.get('status')})")
-        if cap.get("status", "COMPLETED") != "COMPLETED":  # e.g. PENDING review: do not report money as moved
-            raise PayPalError(f"capture is {cap.get('status')}, not COMPLETED")
+        st = cap.get("status", "COMPLETED")
+        if st == "PENDING":  # accepted but not final: never report money as moved, but remember the capture id
+            raise CapturePending(cap["id"], st)
+        if st != "COMPLETED":
+            raise PayPalError(f"capture is {st}, not COMPLETED")
         return {"order_id": r["id"], "status": r["status"], "capture_id": cap["id"]}
+
+    def get_capture(self, capture_id):
+        r = self._call("GET", f"/v2/payments/captures/{capture_id}")
+        return {"capture_id": r["id"], "status": r["status"]}
 
 
 class MockPayPal:
@@ -92,6 +111,7 @@ class MockPayPal:
     def __init__(self, path=":memory:"):
         import sqlite3
         self.db = sqlite3.connect(path, check_same_thread=False)
+        self.capture_status, self.captures = "COMPLETED", {}
         self.db.execute("create table if not exists mock_orders(id text primary key, status text, amount text)")
         self.db.commit()
 
@@ -125,8 +145,16 @@ class MockPayPal:
     def capture(self, oid):
         if self._status(oid) != "APPROVED":
             raise PayPalError("UNPROCESSABLE_ENTITY ORDER_NOT_APPROVED: payer has not approved the order")
+        cid = "CAP" + oid[4:]
+        if self.capture_status != "COMPLETED":  # test hook: make captures come back PENDING
+            self._set(oid, "COMPLETED")
+            self.captures[cid] = self.capture_status
+            raise CapturePending(cid, self.capture_status)
         self._set(oid, "COMPLETED")
-        return {"order_id": oid, "status": "COMPLETED", "capture_id": "CAP" + oid[4:]}
+        return {"order_id": oid, "status": "COMPLETED", "capture_id": cid}
+
+    def get_capture(self, cid):
+        return {"capture_id": cid, "status": self.captures.get(cid, "COMPLETED")}
 
 
 def from_env(mock_db=":memory:"):

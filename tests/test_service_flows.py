@@ -196,7 +196,7 @@ class AuditLog(unittest.TestCase):
     def test_every_step_is_recorded_in_order(self):
         svc, pid = self.full_flow()
         events = [r["event"] for r in svc.ledger.audit_rows(pid)]
-        self.assertEqual(events, ["decision:needs_human", "human_approved", "order_created", "captured"])
+        self.assertEqual(events, ["proposed", "decision:needs_human", "human_approved", "order_created", "captured"])
         self.assertEqual(svc.ledger.verify_audit()[0], True)
 
     def test_actor_and_note_recorded(self):
@@ -222,7 +222,7 @@ class AuditLog(unittest.TestCase):
         svc, pp, t = make()
         r = svc.propose(req(payee_id="evil"))
         ev = [x["event"] for x in svc.ledger.audit_rows(r["payment_id"])]
-        self.assertEqual(ev, ["decision:deny"])
+        self.assertEqual(ev, ["proposed", "decision:deny"])
 
     def test_two_connections_share_one_chain(self):
         d = tempfile.mkdtemp()

@@ -58,7 +58,7 @@ def make_handler(svc, token, port):
                 audit = [{"seq": a["seq"], "ts": a["ts"], "event": a["event"], "payment_id": a["payment_id"], "actor": a["actor"]}
                          for a in svc.ledger.audit_rows(limit=30)]
                 return self._send(200, json.dumps({"budget": svc.budget(), "payments": rows, "now": svc.clock(),
-                                                   "audit": {"ok": ok, "first_bad_seq": bad, "rows": n, "tail": audit}}))
+                                                   "audit": {"ok": ok and not svc.ledger.verify_ledger(), "first_bad_seq": bad, "rows": n, "tail": audit}}))
             self._send(404, '{"error":"not found"}')
 
         def do_POST(self):
@@ -66,7 +66,12 @@ def make_handler(svc, token, port):
                 return
             if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
                 return self._send(415, '{"error":"application/json required"}')
-            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return self._send(400, '{"error":"bad content-length"}')
+            if n < 0:
+                return self._send(400, '{"error":"bad content-length"}')
             if n > 10_000:
                 return self._send(413, '{"error":"too large"}')
             try:

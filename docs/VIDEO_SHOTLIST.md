@@ -15,7 +15,7 @@ Honesty captions: scenes marked SCRIPTED say "scripted attacker (demo.py)" on sc
 | 6 | 1:35-1:55 | **SCRIPTED** attacker (`demo.py`): pays fast-refund-desk -> `DENIED`, PayPal never called; same text to a real payee -> phone card, phrases highlighted, Approve disabled until ticked | "When an agent is fooled, the allow-list stops a stranger, and a real payee gets a human who sees the exact text." |
 | 7 | 1:55-2:15 | **AI reviewer**: `AGENTPURSE_ADVISOR=claude-cli`, a request with pressure wording; card shows `[AI opinion, untrusted]`. Caption: "AI can add caution, never remove it". **Only film this once it has run for real** (not yet run) | "An optional Claude reviewer can only ask for a human. It can never approve." |
 | 8 | 2:15-2:35 | Approve on the phone, payer approves (mock; sandbox page if keys), Claude captures; second capture refused. Pre-typed commands, cut on results | "Limits are re-checked at approval. Captured once." |
-| 9 | 2:35-2:45 | Edit one audit row with a prepared one-liner, run `python -m agentpurse.audit`: `BROKEN at seq N` | "Edit history and it shows." |
-| 10 | 2:45-2:52 | `python3 -m unittest` -> `Ran 128 tests ... OK`; end card: repo URL, "no keys, 30 seconds" | "Standard library only, 128 tests, PayPal Orders v2. AgentPurse: spend limits you can audit." |
+| 9 | 2:35-2:45 | Edit one audit row with a prepared one-liner, run `python -m agentpurse.audit`: `BROKEN at seq N` (or `payments vs chain: MISMATCH` when a payment row is edited) | "Edit history and it shows." |
+| 10 | 2:45-2:52 | `python3 -m unittest` -> `Ran 149 tests ... OK`; end card: repo URL, "no keys, 30 seconds" | "Standard library only, 149 tests, PayPal Orders v2. AgentPurse: spend limits you can audit." |
 
 Capture checklist: split screen at 1080p; terminal font 18pt+; a Claude Code session (or the live/ bridge) visible; no real keys on screen; export burned-in captions, upload Public and check from a logged-out window.

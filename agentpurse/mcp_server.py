@@ -125,6 +125,7 @@ def call_tool(svc: AgentPurse, name, args):
         ok, bad, _ = svc.ledger.verify_audit()
         rows = svc.ledger.audit_rows(args["payment_id"])
         return {"payment_id": args["payment_id"], "chain_ok": ok, "first_bad_seq": bad,
+                "payments_match_chain": svc.ledger.verify_ledger() == [],
                 "events": [{"seq": r["seq"], "ts": r["ts"], "event": r["event"], "actor": r["actor"],
                             "detail": json.loads(r["detail"])} for r in rows]}
 

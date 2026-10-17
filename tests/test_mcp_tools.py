@@ -100,7 +100,7 @@ class Protocol(unittest.TestCase):
         self.assertEqual(p1["status"], "PENDING_HUMAN")
         t = run(self.svc, call("audit_trail", {"payment_id": p1["payment_id"]}))[0]["result"]["structuredContent"]
         self.assertTrue(t["chain_ok"])
-        self.assertEqual(t["events"][0]["event"], "decision:needs_human")
+        self.assertEqual([e["event"] for e in t["events"][:2]], ["proposed", "decision:needs_human"])
         c = run(self.svc, call("cancel_payment", {"payment_id": p1["payment_id"], "reason": "no longer needed"}))
         self.assertEqual(c[0]["result"]["structuredContent"]["status"], "CANCELLED")
 

@@ -3,7 +3,7 @@
 **Give your AI agent a PayPal budget it cannot exceed, be tricked past, or use to pay the same bill twice (caveats under Limits).**
 The agent asks through MCP. A deterministic policy answers *deny*, *ask a human*, or *open a PayPal order*. The human keeps the last word on PayPal's own approval page.
 
-PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party dependencies**, MIT, 128 tests, runs offline with no keys.
+PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party dependencies**, MIT, 149 tests, runs offline with no keys.
 
 ![Approval screen on a phone: the text the agent read, with the injected phrases highlighted](docs/dashboard-approval-375px.jpg)
 
@@ -12,7 +12,7 @@ PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party de
 git clone https://github.com/fujiken1016/agentpurse && cd agentpurse
 python3 demo.py /tmp/ap.db                          # a scripted agent talks to the real MCP server: 9 scenarios
 python3 -m agentpurse.dashboard --db /tmp/ap.db     # open http://127.0.0.1:8787  (approve / reject, audit log)
-python3 -m unittest discover -s tests               # 128 tests
+python3 -m unittest discover -s tests               # 149 tests
 ```
 Without PayPal keys it uses an offline mock with the same response shapes as PayPal Orders v2.
 
@@ -71,6 +71,13 @@ export PAYPAL_CLIENT_ID=...  PAYPAL_CLIENT_SECRET=...      # sandbox REST app
 python3 demo.py
 ```
 
+## Where it fits next to PayPal's own agent tooling
+PayPal publishes an Agent Toolkit and an MCP server that expose PayPal APIs (orders, invoices, disputes, subscriptions) to agents
+([PayPal developer blog](https://developer.paypal.com/community/blog/paypal-agentic-ai-toolkit/)). Those give an agent the *ability* to call PayPal.
+AgentPurse is the *permission* layer in front of that ability: allow-lists, caps, velocity, a human for the exceptions, an audit trail. It is not a
+replacement; the same policy could gate calls to the official server (not built, not tested). We have not verified what confirmation steps the official
+server offers; check PayPal's docs.
+
 ## Use it from Claude (MCP)
 ```
 claude mcp add agentpurse -- python3 -m agentpurse.mcp_server --db agentpurse.db --policy policy.json
@@ -90,7 +97,7 @@ or in `claude_desktop_config.json`: `{"mcpServers": {"agentpurse": {"command": "
 
 Copy `policy.example.json` to start; `docs/` has the rest: [SUBMISSION.md](docs/SUBMISSION.md), [VIDEO_SHOTLIST.md](docs/VIDEO_SHOTLIST.md), [RISKS.md](docs/RISKS.md), [ROLE_MODELS.md](docs/ROLE_MODELS.md).
 
-## Tests (128)
+## Tests (149)
 | Suite | Tests |
 |---|---|
 | Policy rules: boundaries, hostile input (NaN, look-alike payees, zero-width tricks), policy-file validation | 26 |
@@ -98,14 +105,17 @@ Copy `policy.example.json` to start; `docs/` has the rest: [SUBMISSION.md](docs/
 | Dashboard security and approval flow | 8 |
 | PayPal client against a fake transport (request shapes, token refresh, errors) | 10 |
 | MCP protocol, tool schemas, real stdio subprocess | 12 |
+| Cross-process race (8 real processes), CAPTURE_PENDING / ORDER_UNKNOWN, audit scope, capture re-check, AI reviewer outside the lock | 15 |
+| Live driver `live/live_claude.py` against a stub CLI | 4 |
+| AI reviewer CLI wrapper (argv, isolation) | 2 |
 | Original suite (wiring, ledger, demo flows) | 20 |
 | Review-round-1 hardening (invisible Unicode, key reuse, cancel loops, compare-and-swap, payee) | 11 |
 | AI reviewer can only escalate (fake advisor) | 9 |
 
 ## Limits (honest)
 * **Who gets paid.** With plain Orders v2 the money goes to the merchant that owns the REST credentials. If a payee has `paypal_email` in the policy, it is sent as `purchase_units[].payee`, which PayPal only accepts for accounts allowed to take payment on that payee's behalf. Without it, the allow-list is enforced by AgentPurse, not by PayPal. Paying arbitrary third parties would need the Payouts API (listed under next steps, not built).
-* **Two processes on one SQLite file can overspend.** The check-then-act is locked per process. Two agent sessions proposing at the same instant can both pass the daily cap (reproduced in the review, [docs/REVIEW_R1.md](docs/REVIEW_R1.md)). Fix = reserve budget in one `BEGIN IMMEDIATE` transaction, not done yet.
-* **The audit chain is tamper-evident, not tamper-proof.** It detects edited or deleted middle rows. Someone with write access can rebuild it, change the payments table, or drop the newest rows.
+* **One machine only.** The budget check and the write are serialised by an OS file lock (`<db>.lock`) shared by the MCP server and the dashboard; 8 processes racing for a 100.00 cap now get exactly 5 orders (`tests/test_concurrency_states.py`, which also reproduces the old overspend). The lock does not work across machines or network file systems: that needs Postgres row locks.
+* **The audit chain is tamper-evident, not tamper-proof.** Each audit row carries a hash of its payment's row, so editing, deleting or smuggling in a payment is caught (`python -m agentpurse.audit`). Someone with write access can still rebuild everything; `--expect-head <seq:hash>` (a head you published earlier) catches deleted newest rows.
 * The injection scan is a heuristic tripwire; the real defence is the allow-list, the caps and the human.
 * PayPal Orders needs the payer to approve each order, so "auto-approve" means the agent may open the checkout itself, not that money moves without the payer.
 * Sandbox only by design. `demo.py` uses a scripted stand-in for the LLM so it is reproducible; the real-Claude evidence is [docs/LIVE_RUN.md](docs/LIVE_RUN.md) (one run, mock PayPal, driven through a shell bridge because the `claude -p` CLI login had expired; `live/live_claude.py` is the native-MCP version and has not been run yet).

@@ -23,7 +23,10 @@ INJECTION_PATTERNS = [
     r"ignore (all |any |the )?(previous|prior|above|earlier) (instructions?|rules?|directions?|guidance)",
     r"(do not|don't|never) (tell|inform|notify|alert|mention) (this to )?(the )?(user|owner|human|operator)",
     r"(send|transfer|pay|wire|remit) .{0,40}(immediately|urgent|urgently|right now|asap|at once)",
+    r"system\s*(prompt|override|message|notice)?\s*:\s*(override|ignore|pay|new|you)",
     r"system (prompt|override|message|notice)\s*:",
+    r"(forget|ignore|disregard) (everything|all) (above|before|prior)",
+    r"(forget|disregard) (all |any |the )?(earlier|previous|prior) \w+",
     r"you (must|are required to|have to|need to) (now )?(pay|send|transfer|wire)",
     r"disregard (the |your )?(budget|policy|limit|limits|rules)",
     r"(new|updated) (payment|payee|bank) (instructions|details)",
@@ -49,7 +52,7 @@ HIDDEN_CHARS = _Hidden()
 
 KNOWN_KEYS = {"currency", "per_payment_cap", "auto_approve_up_to", "daily_cap", "max_payments_per_hour",
               "max_payments_per_day", "max_pending_human", "duplicate_window_seconds", "pending_ttl_seconds",
-              "allowed_payees", "blocked_payees", "blocked_categories", "human_review_categories"}
+              "max_requests_per_hour", "order_ttl_seconds", "allowed_payees", "blocked_payees", "blocked_categories", "human_review_categories"}
 PAYEE_KEYS = {"name", "categories", "max_amount", "daily_cap", "max_payments_per_day", "paypal_email"}
 
 DEFAULT_POLICY = {
@@ -62,6 +65,8 @@ DEFAULT_POLICY = {
     "max_pending_human": 10,          # approval-fatigue guard: a flood of requests cannot bury the human
     "duplicate_window_seconds": 600,
     "pending_ttl_seconds": 86400,     # a human decision older than this is void (EXPIRED)
+    "max_requests_per_hour": 30,      # every request counts, denied ones too: caps probing and loops
+    "order_ttl_seconds": 10800,       # an uncaptured PayPal order older than this is not captured (PayPal orders lapse too)
     "allowed_payees": {               # payee id -> {name, categories, optional max_amount/daily_cap/max_payments_per_day}
         "acme-api": {"name": "Acme Data API", "categories": ["api", "data"]},
         "docs-pub": {"name": "Docs Publisher", "categories": ["subscription", "content"]},
@@ -99,6 +104,7 @@ class Usage:
     payee_spent_24h: Decimal = Decimal("0")
     payee_count_24h: int = 0
     pending_human: int = 0
+    requests_1h: int = 0
     duplicate_of: str = ""
 
 
@@ -137,7 +143,7 @@ def validate_policy(p: dict) -> dict:
     if cap > day:
         raise PolicyError("per_payment_cap must be <= daily_cap")
     for k in ("max_payments_per_hour", "max_payments_per_day", "max_pending_human",
-              "duplicate_window_seconds", "pending_ttl_seconds"):
+              "duplicate_window_seconds", "pending_ttl_seconds", "max_requests_per_hour", "order_ttl_seconds"):
         if not isinstance(p[k], int) or isinstance(p[k], bool) or p[k] < 0:
             raise PolicyError(f"{k}: must be a non-negative integer")
     if not isinstance(p["allowed_payees"], dict):
@@ -168,9 +174,16 @@ def load_policy(path=None) -> dict:
     return validate_policy(p)
 
 
+# Latin look-alikes from Cyrillic/Greek: NFKC does not fold them, so "ignоre" (Cyrillic o) would slip past the patterns.
+_CONFUSABLE = str.maketrans({"а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y", "і": "i", "ј": "j",
+                             "ѕ": "s", "ԁ": "d", "ɡ": "g", "ο": "o", "α": "a", "ε": "e", "ι": "i", "ν": "v", "υ": "u",
+                             "τ": "t", "κ": "k", "ρ": "p", "А": "A", "Е": "E", "О": "O", "Р": "P", "С": "C", "Х": "X",
+                             "Т": "T", "М": "M", "Н": "H", "К": "K", "В": "B"})
+
+
 def _norm(t) -> str:
     t = "".join(chr(ord(c) - 0xE0000) if 0xE0020 <= ord(c) <= 0xE007E else c for c in str(t))  # reveal tag-char text
-    return unicodedata.normalize("NFKC", HIDDEN_CHARS.sub("", t))
+    return unicodedata.normalize("NFKC", HIDDEN_CHARS.sub("", t)).translate(_CONFUSABLE)
 
 
 def find_injection(*texts) -> list:
@@ -242,6 +255,8 @@ def _evaluate(policy, req, u: Usage) -> Decision:
         deny.append("velocity limit: too many payments in the last hour")
     if u.count_24h >= int(policy["max_payments_per_day"]):
         deny.append("velocity limit: too many payments in the last 24 hours")
+    if u.requests_1h >= int(policy["max_requests_per_hour"]):
+        deny.append(f"too many requests from this agent in the last hour (limit {policy['max_requests_per_hour']})")
     if u.pending_human >= int(policy["max_pending_human"]):
         deny.append("too many requests are already waiting for a human; wait for them to be decided")
     if u.duplicate_of:
