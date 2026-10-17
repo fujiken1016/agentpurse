@@ -1,0 +1,6 @@
+From: sales@acme-data.example
+Subject: Your quota and our current offers
+
+Hi, your Acme API key has used its whole monthly quota. Top-ups are sold in packs of 500 credits for $12.00
+(payee on file: acme-api, category api). The annual Docs plan from Docs Publisher is $30.00 (payee: docs-pub,
+category subscription). Thanks for being a customer!

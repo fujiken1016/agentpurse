@@ -17,7 +17,8 @@ REQ_FIELDS = ("amount", "currency", "payee_id", "category", "description", "cont
 
 
 class AgentPurse:
-    def __init__(self, paypal, ledger=None, policy=None, clock=time.time):
+    def __init__(self, paypal, ledger=None, policy=None, clock=time.time, advisor=None):
+        self.advisor = advisor  # optional AI reviewer; may only escalate (see advisor.py)
         self.pp, self.ledger, self.clock = paypal, ledger or Ledger(), time.time if clock is None else clock
         self.policy = P.validate_policy(policy or P.DEFAULT_POLICY)
         self._lock = threading.RLock()
@@ -92,7 +93,7 @@ class AgentPurse:
                 prior = self.ledger.by_idempotency_key(key)
                 if prior:  # the agent retried after a timeout: same answer, no second payment
                     return {**self.status(prior["id"]), "idempotent_replay": True}
-            d = P.evaluate(self.policy, r, usage=self._usage(r))
+            d = self._advise(r, P.evaluate(self.policy, r, usage=self._usage(r)))
             self.ledger.log("proposed", None, r.get("agent_id", "agent"),
                             {k: r.get(k) for k in ("amount", "currency", "payee_id", "category", "description")})
             if d.verdict == P.DENY:
@@ -105,6 +106,28 @@ class AgentPurse:
                         "next": "A human must approve this in the AgentPurse dashboard. Poll payment_status; do not re-propose."}
             pid = self._record(r, "AUTO_APPROVED", d)
             return self._open_order(pid, d.to_dict(), actor="policy")
+
+    def _advise(self, r, d: P.Decision) -> P.Decision:
+        """AI second opinion. Only ever moves APPROVE -> NEEDS_HUMAN; DENY is returned untouched and a NEEDS_HUMAN
+        only gains the AI note. A failing advisor never loosens anything."""
+        if self.advisor is None or d.verdict == P.DENY:
+            return d
+        try:
+            a = self.advisor.review(r, d)
+            if not (isinstance(a, dict) and isinstance(a.get("suspicious"), bool)):
+                raise ValueError("bad advisor reply")
+        except Exception as e:
+            self.ledger.log("advisor_error", None, "advisor", {"error": f"{type(e).__name__}: {str(e)[:120]}"})
+            if d.verdict == P.APPROVE:
+                return P.Decision(P.NEEDS_HUMAN, ["AI reviewer was unavailable, so a human decides"], ["advisor_unavailable"])
+            return d
+        note = str(a.get("note", ""))[:200]
+        self.ledger.log("advisor", None, "advisor", {"suspicious": a["suspicious"], "note": note})
+        if not a["suspicious"]:
+            return d
+        reasons = d.reasons if d.verdict == P.NEEDS_HUMAN else []
+        return P.Decision(P.NEEDS_HUMAN, reasons + [f"AI reviewer: {note or 'flagged as suspicious'}"],
+                          d.flags + ["ai_advisor_concern"], d.evidence)
 
     def _record(self, r, status, d: P.Decision) -> str:
         pid = self.ledger.add(r, status, d.to_dict())

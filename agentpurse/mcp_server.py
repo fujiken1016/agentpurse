@@ -4,7 +4,7 @@ Run:  python -m agentpurse.mcp_server [--policy policy.json] [--db agentpurse.db
 """
 from __future__ import annotations
 import argparse, json, sys
-from . import paypal, policy as P
+from . import advisor, paypal, policy as P
 from .ledger import Ledger
 from .service import AgentPurse
 
@@ -191,8 +191,8 @@ def main():
     ap.add_argument("--policy")
     ap.add_argument("--db", default="agentpurse.db")
     a = ap.parse_args()
-    svc = AgentPurse(paypal.from_env(a.db), Ledger(a.db), P.load_policy(a.policy))
-    print(f"agentpurse MCP ready (PayPal mode: {svc.pp.mode})", file=sys.stderr)
+    svc = AgentPurse(paypal.from_env(a.db), Ledger(a.db), P.load_policy(a.policy), advisor=advisor.from_env())
+    print(f"agentpurse MCP ready (PayPal mode: {svc.pp.mode}, AI reviewer: {'on' if svc.advisor else 'off'})", file=sys.stderr)
     serve(svc)
 
 

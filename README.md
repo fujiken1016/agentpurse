@@ -3,7 +3,7 @@
 **Give your AI agent a PayPal budget it cannot overspend, be tricked out of, or double-charge.**
 The agent asks through MCP. A deterministic policy answers *deny*, *ask a human*, or *open a PayPal order*. The human keeps the last word on PayPal's own approval page.
 
-PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party dependencies**, MIT, 108 tests, runs offline with no keys.
+PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party dependencies**, MIT, 117 tests, runs offline with no keys.
 
 ![Approval screen on a phone: the text the agent read, with the injected phrases highlighted](docs/dashboard-approval-375px.jpg)
 
@@ -12,7 +12,7 @@ PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party de
 git clone https://github.com/fujiken1016/agentpurse && cd agentpurse
 python3 demo.py /tmp/ap.db                          # a scripted agent talks to the real MCP server: 9 scenarios
 python3 -m agentpurse.dashboard --db /tmp/ap.db     # open http://127.0.0.1:8787  (approve / reject, audit log)
-python3 -m unittest discover -s tests               # 108 tests
+python3 -m unittest discover -s tests               # 117 tests
 ```
 Without PayPal keys it uses an offline mock with the same response shapes as PayPal Orders v2.
 
@@ -48,7 +48,13 @@ flowchart LR
 ```
 
 ## Where AI is used, and where it is not
-The **agent is the AI** (Claude through MCP, or any MCP client). It decides what to buy and writes the `context`. The **policy contains no model on purpose**: a control you can unit-test and explain to an auditor cannot be talked out of its rules. AgentPurse gives the model a safe tool surface: `simulate_payment` lets it ask "would this pass?" before trying, and the server `instructions` teach it the workflow, so it self-corrects instead of retrying blindly.
+| Where | What the AI does | What it can never do |
+|---|---|---|
+| **The shopping agent** (Claude via MCP) | Reads the job and the supplier text, chooses what to buy, calls the tools, reacts to DENIED / PENDING_HUMAN. [docs/LIVE_RUN.md](docs/LIVE_RUN.md) is a real Claude doing exactly this (raw log included). | Spend outside the policy. A DENIED is final. |
+| **Optional AI reviewer** (`AGENTPURSE_ADVISOR=claude-cli`, off by default, local Claude Code CLI, no extra key) | Reads each request the rules did not deny and may say "suspicious" (mismatch, pressure, social engineering). That turns an auto-approval into **human review** and puts its note on the approval card. | Approve, lift a DENY, or soften a human-review. Its answer is parsed strictly; if it is down or unparseable an auto-approval also goes to a human. 9 tests. |
+| **The policy decision** | Nothing. Pure deterministic rules a risk team can unit-test and read. | n/a: a model here could be talked out of its rules, so none is allowed to decide. |
+
+The AI is asked for caution, never for permission. `simulate_payment` and the server `instructions` also let the agent ask "would this pass?" and self-correct instead of retrying blindly.
 
 ## PayPal APIs used
 | Step | Call |
@@ -84,7 +90,7 @@ or in `claude_desktop_config.json`: `{"mcpServers": {"agentpurse": {"command": "
 
 Copy `policy.example.json` to start; `docs/` has the rest: [SUBMISSION.md](docs/SUBMISSION.md), [VIDEO_SHOTLIST.md](docs/VIDEO_SHOTLIST.md), [RISKS.md](docs/RISKS.md), [ROLE_MODELS.md](docs/ROLE_MODELS.md).
 
-## Tests (108)
+## Tests (117)
 | Suite | Tests |
 |---|---|
 | Policy rules: boundaries, hostile input (NaN, look-alike payees, zero-width tricks), policy-file validation | 26 |
@@ -93,9 +99,10 @@ Copy `policy.example.json` to start; `docs/` has the rest: [SUBMISSION.md](docs/
 | PayPal client against a fake transport (request shapes, token refresh, errors) | 10 |
 | MCP protocol, tool schemas, real stdio subprocess | 12 |
 | Original suite | 20 |
+| AI reviewer can only escalate (fake advisor) | 9 |
 
 ## Limits (honest)
 * The injection scan is a heuristic tripwire; the real defence is the allow-list, the caps and the human.
 * PayPal Orders needs the payer to approve each order, so "auto-approve" means the agent may open the checkout itself, not that money moves without the payer.
-* Sandbox only by design. `demo.py` uses a scripted stand-in for the LLM so it is reproducible.
+* Sandbox only by design. `demo.py` uses a scripted stand-in for the LLM so it is reproducible; the real-Claude evidence is [docs/LIVE_RUN.md](docs/LIVE_RUN.md) (one run, mock PayPal, driven through a shell bridge because the `claude -p` CLI login had expired; `live/live_claude.py` is the native-MCP version and has not been run yet).
 * SQLite single-node; see [docs/RISKS.md](docs/RISKS.md) for what that means and what would come next.
