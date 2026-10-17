@@ -1,12 +1,11 @@
 # Role models: what wins PayPal hackathons, and what we copied
 
-Opened and read on 2026-10-18. Everything below is what the sources actually say; where a reason for winning is my
-inference, it is marked **(inference)**.
+Sources opened on 2026-10-18. Everything below is what the sources say; where a reason for winning is inferred, it is marked **(inference)**.
 
 ## 1. The judging criteria we are optimising for
-Source: Devpost event page https://paypalaihackathon.devpost.com/ . **The page itself returned HTTP 403 to my fetcher**, so the
+Source: Devpost event page https://paypalaihackathon.devpost.com/ . **The page itself returned HTTP 403 to the tooling used**, so the
 criteria below come from a secondary summary (https://thegenaimagazine.com/paypal-ai-hackathon-2026-ideas-deadline-prizes)
-and a search snippet quoting the Devpost judging section. Please eyeball the official page once before submitting.
+and a search snippet quoting the Devpost judging section. Verify against the official page before submitting.
 
 Five equally weighted criteria: **Technological Implementation** (real, non-trivial use of PayPal *and* AI; "must work",
 mockups do not count), **Design** (a complete product, not a proof of concept), **Potential Impact**, **Innovation**,
@@ -28,7 +27,7 @@ Honest limit: this is one prior event and the post gives almost no judge comment
 "works end to end" and "complete product".
 
 ## 3. Same-event 2026 entries studied as README / product models (not winners; results are not out until ~2026-12-21)
-* **Holdfast** https://github.com/faizanmohiuddin482/holdfast : strongest README structure I found. Tagline, hosted demo link,
+* **Holdfast** https://github.com/faizanmohiuddin482/holdfast : strongest README structure among the entries studied. Tagline, hosted demo link,
   a numbered 4-step *judge click path with sample inputs*, a table mapping every money step to a PayPal endpoint, a
   guardrails list for the MCP tools, an honest "Limits" section. Its gap (by its own README): no screenshots/GIF/diagram,
   test coverage not described. **Copied**: judge click path, endpoint table, limits section. **Fixed on ours**: screenshot,

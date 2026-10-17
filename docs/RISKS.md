@@ -1,17 +1,11 @@
 # Risks, surprises, and what we did about them
 
-Ordered by how much each could cost us in judging. "Status" says whether it is fixed, mitigated, or open.
+"Status" says whether each item is fixed, mitigated, or open.
 
-## Judging risks
-| # | Risk | Why it matters | Status / action |
-|---|---|---|---|
-| R1 | **"Meaningful AI" is thin.** The policy has no model by design and `demo.py` uses a scripted agent. Rules require meaningful AI use. | Could cost the Technological Implementation score outright. | **Open, highest priority.** Mitigation: record the video with a real Claude client driving the MCP server (shotlist scene 3), keep the "Where AI is used" table in the README, and lean on `simulate_payment` + server `instructions` as AI-facing design. Cheap upgrade if time allows: an optional LLM "explain this request to the human" summary on the approval card (advisory only, never decides). Not built: needs an API key and spend. |
-| R2 | **Never run against the real PayPal sandbox** (no keys yet). Real response shapes could differ from the ones we coded to. | The criteria say it must work; "mock only" reads as a mockup. | Mitigated: client tested against a fake transport built from PayPal's documented Orders v2 shapes (create, capture, 401 refresh, 422, PENDING capture). **First task when keys arrive:** run `demo.py` with keys, fix any shape mismatch, add a recorded sandbox clip to the video. |
-| R3 | **Crowded idea.** `spendwall` (https://github.com/AndrewDongminYoo/spendwall) is the same pattern with Postgres, reservations and webhooks; `holdfast` has a hosted demo. | Innovation score; judges may see us as a clone. | Mitigated in positioning (ROLE_MODELS.md section 3): buyer-side agent spend, stdlib-only 30-second run, evidence-first approval screen, hash-chained audit, injection hardening. Open: no hosted demo URL (see R4). |
-| R5 | **Could not read the official Devpost page** (HTTP 403). Criteria, dates and prizes come from a secondary summary and search snippets. | A wrong deadline or missing requirement is fatal. | Open, 2 minutes of human work: read https://paypalaihackathon.devpost.com/ and `/rules`. Deadline per sources: **2026-11-12 12:00 PM Pacific = 2026-11-13 05:00 JST.** |
-| R6 | **Video over 3:00 or not public on YouTube** is disqualifying per the sources. | Binary. | Shotlist targets 2:40. Upload as Public, check from a logged-out window. |
-| R7 | **"Autonomous payments" overclaim.** PayPal Orders needs the payer to approve every order. | Judges who know PayPal will notice. | Fixed: README, submission text and tool descriptions all say auto-approve = the agent may open the checkout, the payer still consents. |
-| R4 | **No hosted demo.** The dashboard binds to 127.0.0.1 and needs Python. | Judges may not run code. | Open. Options (not done, no billing allowed): static recording in the README (screenshot added), GIF from the video. A hosted deployment needs the dashboard behind real auth first. |
+## Submission facts that are still open
+* The PayPal client has not run against the live sandbox (no keys yet). First task when keys arrive: run `demo.py` with keys, fix shape mismatches, record a sandbox clip.
+* The Devpost page could not be fetched by the tooling used to prepare this repo (HTTP 403): criteria and dates in ROLE_MODELS.md come from secondary sources and must be checked on the official page before submitting.
+* No hosted demo: the dashboard binds to 127.0.0.1 and would need real authentication before any hosting.
 
 ## Engineering risks
 | # | Risk | Status / action |
@@ -36,3 +30,12 @@ Ordered by how much each could cost us in judging. "Status" says whether it is f
 
 ## Hygiene (checked before the PR)
 No keys, `.env` or `*.db` in the tree (`.gitignore` covers them). No personal name or contact data in files or in commit author fields (commits use the repository's existing noreply identity). No billable action was taken; sandbox keys were never used.
+
+## Added after review round 1 (see REVIEW_R1.md)
+| # | Risk | Status |
+|---|---|---|
+| R18 | **Who is the PayPal payee?** Orders v2 pays the credential owner; `payee_id` was policy-only. | Mitigated: optional per-payee `paypal_email` is sent as `purchase_units[].payee`. Paying arbitrary third parties needs Payouts: open. |
+| R19 | **A `PENDING` capture leaves the ledger at ORDER_CREATED**, and a create-order timeout is recorded as FAILED, so a re-proposal gets a new PayPal-Request-Id. | Open. Needs `CAPTURE_PENDING` / `ORDER_UNKNOWN` states and webhook reconciliation. |
+| R20 | **The audit chain does not cover the payments table**; the `proposed` and `advisor` rows are not linked to a payment id. | Open. Next: hash each payment row into the chain, create the row before logging. |
+| R21 | **The AI reviewer runs inside the service lock** (up to 30 s) and shells out to the local CLI, which loads that user's own Claude settings. | Open. Off by default. Next: run outside the lock, neutral cwd and env, cache by request hash. Its CLI flags have not been run end to end yet (login expired during preparation). |
+| R22 | **Capture does no policy re-check** and `simulate_payment` excludes the AI reviewer. | Open / documented in the tool description. |

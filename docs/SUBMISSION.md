@@ -2,7 +2,7 @@
 
 **Project name:** AgentPurse
 
-**Tagline (60 chars):** A PayPal budget your AI agent can't overspend or be tricked out of
+**Tagline:** A PayPal budget your AI agent can't exceed or be tricked past
 
 ## Inspiration
 An agent that can spend money is one poisoned web page away from paying an attacker. "Never pay strangers" in a system
@@ -26,19 +26,22 @@ audit log that detects after-the-fact edits.
 ## How we built it
 Python standard library only: a JSON-RPC 2.0 MCP server over stdio, a pure-function policy engine, a SQLite ledger with a
 hash-chained audit table, a PayPal Orders v2 client with an exact-host sandbox guard, and a phone-friendly approval dashboard
-protected against cross-site requests. The same code runs against an offline PayPal mock or the real sandbox (set two
-environment variables). 108 automated tests, including the PayPal client against a fake transport and a real MCP subprocess.
+protected against cross-site requests. The same code runs against an offline PayPal mock, or the sandbox when two
+environment variables are set (not yet run against the live sandbox: no keys at the time of writing). 128 automated tests, including the PayPal client against a fake transport and a real MCP subprocess.
 
 ## How AI is used
-The agent is the AI: Claude (or any MCP client) chooses what to buy and supplies the `context` it read. We deliberately keep
-a model *out* of the decision path so the control cannot be argued with. We make the model a better citizen instead: server
-`instructions` teach the workflow, `simulate_payment` lets it check a plan before acting, and denial reasons are written for a
-model to read and correct from, without rephrasing its way around the rule.
+1. **A real Claude is the buyer.** It reads the job and supplier emails, chooses what to buy, calls the MCP tools and reacts to the answers.
+   `docs/LIVE_RUN.md` has two real runs with raw logs: it buys inside the policy, waits for a human on an over-limit purchase, accepts a
+   forbidden purchase being denied without trying to get around it, and (run B, no hints) ignores an injected "SYSTEM OVERRIDE" paragraph on its own.
+2. **An optional Claude reviewer can only add caution.** For requests the rules did not deny, it can ask for human review (and write a note
+   labelled "AI opinion, untrusted"). It can never approve, lift a DENY or soften a human review; if it fails, auto-approvals go to a human.
+3. **No model decides.** The policy is deterministic so it cannot be talked out of its rules. Server `instructions`, `simulate_payment`
+   and model-readable denial reasons help the agent correct itself instead of retrying blindly.
 
 ## PayPal technology used
 PayPal REST Orders v2 (create with `payment_source.paypal`, `PAY_NOW`; capture), OAuth2 client-credentials with refresh on 401,
 `PayPal-Request-Id` idempotency, sandbox environment. Designed around PayPal's consent model: money moves only after the payer
-approves on PayPal.
+approves on PayPal. Not yet exercised against the live sandbox.
 
 ## Challenges
 * Making "auto-approve" honest: with PayPal Orders the payer approves every order, so auto-approve means the agent may open the checkout itself.
