@@ -25,7 +25,7 @@ def tool(name, **args):
 
 
 def show(title, r):
-    keys = {k: r[k] for k in ("status", "reasons", "flags", "approve_url", "next") if k in r}
+    keys = {k: r[k] for k in ("status", "reasons", "flags", "idempotent_replay", "approve_url", "next") if k in r}
     print(f"\n== {title}\n   payment {r.get('payment_id', '')}: " + json.dumps(keys, indent=3).replace("\n", "\n   "))
 
 
@@ -33,7 +33,7 @@ rpc("initialize", {"protocolVersion": "2024-11-05"})
 print("tools:", [t["name"] for t in rpc("tools/list")["tools"]])
 print("budget:", json.dumps(tool("check_budget")))
 
-r1 = tool("propose_payment", amount="12.00", payee_id="acme-api", category="api",
+r1 = tool("propose_payment", amount="12.00", payee_id="acme-api", category="api", idempotency_key="job-42",
           description="500 API credits", context="Task: enrich 500 rows; Acme API key quota is exhausted.")
 show("1. Normal purchase (allow-listed, small)", r1)
 
@@ -52,6 +52,12 @@ show("4. Larger subscription -> a human must approve", r4)
 
 show("5. Over the hard cap", tool("propose_payment", amount="500.00", payee_id="acme-api", category="api", description="bulk"))
 
+# The agent times out and retries scenario 1 -> same payment, never charged twice.
+show("5b. Retry with the same idempotency_key", tool("propose_payment", amount="12.00", payee_id="acme-api", category="api",
+     description="500 API credits", idempotency_key="job-42"))
+show("5c. ...and the very same request again (no key) -> duplicate guard",
+     tool("propose_payment", amount="12.00", payee_id="acme-api", category="api", description="500 API credits"))
+
 # The human (dashboard) approves #4; the payer approves the PayPal order; the agent captures #1.
 mock = MockPayPal(db)
 if mock.count():  # offline mode only
@@ -64,6 +70,7 @@ if mock.count():  # offline mode only
     for r in (r1, h):
         mock.payer_approve(svc.ledger.get(r["payment_id"])["order_id"])
     show("7. Agent captures #1 after the payer approved", tool("capture_payment", payment_id=r1["payment_id"]))
+print("\naudit trail of #1:", json.dumps([e["event"] for e in tool("audit_trail", payment_id=r1["payment_id"])["events"]]))
 print("\nbudget now:", json.dumps(tool("check_budget")))
-print("ledger db:", db, "  -> view it: python -m agentpurse.dashboard --db", db)
+print("ledger db:", db, "  -> view it: python -m agentpurse.dashboard --db", db, "  |  verify log: python -m agentpurse.audit --db", db)
 proc.stdin.close()

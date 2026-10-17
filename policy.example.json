@@ -4,9 +4,15 @@
   "auto_approve_up_to": "20.00",
   "daily_cap": "100.00",
   "max_payments_per_hour": 5,
+  "max_payments_per_day": 20,
+  "max_pending_human": 10,
+  "duplicate_window_seconds": 600,
+  "pending_ttl_seconds": 86400,
   "allowed_payees": {
-    "acme-api": {"name": "Acme Data API", "categories": ["api", "data"]}
+    "acme-api": {"name": "Acme Data API", "categories": ["api", "data"], "max_amount": "30.00", "daily_cap": "60.00", "max_payments_per_day": 5},
+    "docs-pub": {"name": "Docs Publisher", "categories": ["subscription", "content"]}
   },
+  "blocked_payees": [],
   "blocked_categories": ["gift_card", "crypto", "gambling", "adult"],
   "human_review_categories": ["subscription"]
 }

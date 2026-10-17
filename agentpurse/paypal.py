@@ -14,11 +14,15 @@ class PayPalClient:
     mode = "sandbox"
 
     def __init__(self, client_id, secret, base=SANDBOX):
-        if "sandbox" not in base:
+        host = urllib.parse.urlparse(base)
+        # exact host match: "https://evil.example/sandbox" or "api-m.sandbox.paypal.com.evil.example" must not pass
+        if host.scheme != "https" or host.hostname not in ("api-m.sandbox.paypal.com", "api.sandbox.paypal.com"):
             raise PayPalError("AgentPurse refuses to run against a non-sandbox PayPal host")
-        self.cid, self.secret, self.base, self._tok = client_id, secret, base, None
+        self.cid, self.secret, self.base, self._tok = client_id, secret, base.rstrip("/"), None
+        self.return_url = os.environ.get("PAYPAL_RETURN_URL", "https://example.com/return")
+        self.cancel_url = os.environ.get("PAYPAL_CANCEL_URL", "https://example.com/cancel")
 
-    def _call(self, method, path, body=None, headers=None, form=None, auth=None):
+    def _call(self, method, path, body=None, headers=None, form=None, auth=None, _retry=True):
         h = {"Accept": "application/json"}
         h.update(headers or {})
         data = None
@@ -35,7 +39,12 @@ class PayPalClient:
                 raw = r.read()
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as e:
+            if e.code == 401 and _retry and auth is None:  # token expired: fetch a new one once
+                self._tok = None
+                return self._call(method, path, body, headers, form, auth, _retry=False)
             raise PayPalError(f"{e.code} {e.read().decode()[:300]}")
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            raise PayPalError(f"network error talking to PayPal: {e}")
 
     def _token(self):
         if not self._tok:
@@ -46,11 +55,12 @@ class PayPalClient:
         return self._tok
 
     def create_order(self, ref, amount, currency, description):
+        # PayPal-Request-Id = our payment id: a retried HTTP call can never create a second order
         body = {"intent": "CAPTURE",
                 "purchase_units": [{"reference_id": ref, "custom_id": ref, "description": description[:127],
                                     "amount": {"currency_code": currency, "value": str(amount)}}],
                 "payment_source": {"paypal": {"experience_context": {
-                    "return_url": "https://example.com/return", "cancel_url": "https://example.com/cancel",
+                    "return_url": self.return_url, "cancel_url": self.cancel_url,
                     "user_action": "PAY_NOW", "shipping_preference": "NO_SHIPPING"}}}}
         r = self._call("POST", "/v2/checkout/orders", body, {"PayPal-Request-Id": ref})
         link = next((l["href"] for l in r.get("links", []) if l["rel"] in ("payer-action", "approve")), None)
@@ -63,7 +73,12 @@ class PayPalClient:
     def capture(self, order_id):
         r = self._call("POST", f"/v2/checkout/orders/{order_id}/capture", {},
                        {"PayPal-Request-Id": "cap-" + order_id})
-        cap = r["purchase_units"][0]["payments"]["captures"][0]
+        try:
+            cap = r["purchase_units"][0]["payments"]["captures"][0]
+        except (KeyError, IndexError, TypeError):
+            raise PayPalError(f"capture response had no capture (order status {r.get('status')})")
+        if cap.get("status", "COMPLETED") != "COMPLETED":  # e.g. PENDING review: do not report money as moved
+            raise PayPalError(f"capture is {cap.get('status')}, not COMPLETED")
         return {"order_id": r["id"], "status": r["status"], "capture_id": cap["id"]}
 
 
@@ -113,5 +128,8 @@ class MockPayPal:
 
 
 def from_env(mock_db=":memory:"):
+    """Real sandbox client when PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are set, otherwise the offline mock."""
     cid, sec = os.environ.get("PAYPAL_CLIENT_ID"), os.environ.get("PAYPAL_CLIENT_SECRET")
-    return PayPalClient(cid, sec) if cid and sec else MockPayPal(mock_db)
+    if cid and sec:
+        return PayPalClient(cid, sec, os.environ.get("PAYPAL_BASE_URL", SANDBOX))
+    return MockPayPal(mock_db)

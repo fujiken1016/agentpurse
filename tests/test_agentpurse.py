@@ -88,10 +88,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.svc.human_decide(r["payment_id"], True)["status"], "ORDER_CREATED")
 
     def test_human_approval_rechecks_budget(self):
-        a = self.svc.propose(req(amount="30.00"))
-        b = self.svc.propose(req(amount="30.00"))
-        c = self.svc.propose(req(amount="30.00"))
-        d = self.svc.propose(req(amount="30.00"))
+        a, b, c, d = (self.svc.propose(req(amount="30.00", description=f"batch {i}")) for i in range(4))
         for x in (a, b, c):
             self.svc.human_decide(x["payment_id"], True)  # 90 reserved
         self.assertEqual(self.svc.human_decide(d["payment_id"], True)["status"], "DENIED")  # 120 > 100
@@ -124,7 +121,7 @@ class McpTests(unittest.TestCase):
         mcp_server.serve(svc, io.StringIO("\n".join(map(json.dumps, msgs)) + "\n"), out)
         rs = [json.loads(l) for l in out.getvalue().splitlines()]
         self.assertEqual([r["id"] for r in rs], [1, 2, 3, 4])  # notification gets no reply
-        self.assertEqual(len(rs[1]["result"]["tools"]), 5)
+        self.assertEqual(len(rs[1]["result"]["tools"]), 8)
         self.assertIn("ORDER_CREATED", rs[2]["result"]["content"][0]["text"])
         self.assertIn("error", rs[3])
 
