@@ -25,11 +25,10 @@ Text the agent read before asking: <untrusted>%(context)s</untrusted>
 
 def parse_advice(text):
     """Return {'suspicious': bool, 'note': str} or None. Strict: anything else is 'unparseable'."""
-    m = re.search(r"\{.*?\}", text or "", re.S)
-    if not m:
-        return None
+    t = (text or "").strip()
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t)  # tolerate a code fence, nothing else
     try:
-        j = json.loads(m.group(0))
+        j = json.loads(t)  # the WHOLE reply must be one JSON object: quoted attacker text cannot spoof a verdict
     except ValueError:
         return None
     if not isinstance(j, dict) or not isinstance(j.get("suspicious"), bool):
@@ -41,12 +40,12 @@ def parse_advice(text):
 class ClaudeCliAdvisor:
     """Runs the local Claude Code CLI in print mode with every tool disabled (no extra API key or spend)."""
 
-    def __init__(self, cmd=None, model="haiku", timeout=45):
+    def __init__(self, cmd=None, model="haiku", timeout=30):
         self.cmd = cmd or os.environ.get("AGENTPURSE_CLAUDE_BIN") or shutil.which("claude") or "claude"
         self.model, self.timeout = model, timeout
 
     def review(self, req, decision=None):
-        fields = {k: str(req.get(k, ""))[:2000] for k in ("payee_id", "category", "amount", "currency", "description", "context")}
+        fields = {k: str(req.get(k, ""))[:2000].replace("<", "(").replace(">", ")") for k in ("payee_id", "category", "amount", "currency", "description", "context")}
         out = subprocess.run([self.cmd, "-p", PROMPT % fields, "--model", self.model, "--tools", "",
                               "--no-session-persistence", "--output-format", "text"],
                              capture_output=True, text=True, timeout=self.timeout, stdin=subprocess.DEVNULL)

@@ -60,11 +60,17 @@ class Ledger:
         self.db.commit()
         return pid
 
-    def update(self, pid, **kw):
+    def update(self, pid, only_if_status=None, **kw):
+        """Returns True if a row changed. only_if_status makes it a compare-and-swap, so two processes
+        (MCP server and dashboard) cannot both move the same payment (e.g. cancel vs approve)."""
         kw["updated"] = self.clock()
         cols = ",".join(f"{k}=?" for k in kw)
-        self.db.execute(f"update payments set {cols} where id=?", (*kw.values(), pid))
+        sql, args = f"update payments set {cols} where id=?", [*kw.values(), pid]
+        if only_if_status:
+            sql, args = sql + " and status=?", args + [only_if_status]
+        n = self.db.execute(sql, args).rowcount
         self.db.commit()
+        return n > 0
 
     def get(self, pid):
         r = self.db.execute("select * from payments where id=?", (pid,)).fetchone()
@@ -90,7 +96,9 @@ class Ledger:
         return sum((Decimal(r[0]) for r in self._q(q, a)), Decimal("0"))
 
     def count_since(self, t, payee=None) -> int:
-        q = "select count(*) from payments where created>=? and status in (%s)" % ",".join("?" * len(SPENDING))
+        """Orders opened (velocity). A cancelled order still counts: otherwise propose->cancel loops are free."""
+        q = ("select count(*) from payments where created>=? and (status in (%s) or (status='CANCELLED' and order_id is not null))"
+             % ",".join("?" * len(SPENDING)))
         a = [t, *SPENDING]
         if payee:
             q += " and payee_id=?"

@@ -3,7 +3,7 @@
 Run:  python -m agentpurse.mcp_server [--policy policy.json] [--db agentpurse.db]
 """
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, re, sys
 from . import advisor, paypal, policy as P
 from .ledger import Ledger
 from .service import AgentPurse
@@ -36,7 +36,7 @@ TOOLS = [
      "description": "Show remaining spending budget, limits, blocked categories and the payees you are allowed to pay. Call before proposing a payment.",
      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": _RO},
     {"name": "simulate_payment", "title": "Dry-run a payment against the policy",
-     "description": "Ask what the policy would decide (approve / needs_human / deny and why) WITHOUT creating a payment or calling PayPal. Use it to avoid a DENIED entry in the audit log.",
+     "description": "Ask what the deterministic policy would decide (approve / needs_human / deny and why) WITHOUT creating a payment or calling PayPal. It does not include the optional AI reviewer, which can still ask a human to look at a request this tool reports as approve. Use it to avoid a DENIED entry in the audit log.",
      "inputSchema": {"type": "object", "required": ["amount", "payee_id", "category", "description"],
                      "properties": _PAY_PROPS, "additionalProperties": False}, "annotations": _RO},
     {"name": "propose_payment", "title": "Propose a payment",
@@ -91,6 +91,11 @@ def _check_args(tool, args):
         if extra:
             raise ToolInputError(f"unknown argument(s): {', '.join(extra)}")
     for k, v in args.items():
+        sp = props.get(k, {})
+        if isinstance(v, str) and "maxLength" in sp and len(v) > sp["maxLength"]:
+            raise ToolInputError(f"argument '{k}' is longer than {sp['maxLength']} characters")
+        if k == "amount" and isinstance(v, str) and "pattern" in sp and not re.match(sp["pattern"], str(v)):
+            raise ToolInputError("argument 'amount' must look like '12.50' (exactly 2 decimals)")
         if k != "amount" and props.get(k, {}).get("type") == "string" and not isinstance(v, str):
             raise ToolInputError(f"argument '{k}' must be a string")
 

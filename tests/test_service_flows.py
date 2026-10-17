@@ -61,7 +61,8 @@ class Idempotency(unittest.TestCase):
         svc, pp, t = make()
         a = svc.propose(req(payee_id="evil", idempotency_key="k"))
         b = svc.propose(req(payee_id="acme-api", idempotency_key="k"))
-        self.assertEqual((a["status"], b["status"]), ("DENIED", "DENIED"))
+        self.assertEqual(a["status"], "DENIED")
+        self.assertIn("different request", b["error"])  # a key cannot be reused to smuggle in another purchase
         self.assertEqual(pp.count(), 0)
 
     def test_key_is_scoped_per_agent(self):
@@ -112,7 +113,7 @@ class Hardening(unittest.TestCase):
     def test_paypal_failure_marks_failed_and_releases_budget(self):
         svc, pp, t = make()
         from agentpurse.paypal import PayPalError
-        def boom(*a):
+        def boom(*a, **k):
             raise PayPalError("500 down")
         pp.create_order = boom
         r = svc.propose(req())

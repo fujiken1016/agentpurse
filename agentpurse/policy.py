@@ -20,7 +20,7 @@ APPROVE, NEEDS_HUMAN, DENY = "approve", "needs_human", "deny"
 
 # Phrases that show up when a web page / email / tool result tries to steer the agent into paying.
 INJECTION_PATTERNS = [
-    r"ignore (all |any |the )?(previous|prior|above|earlier) (instructions|rules|directions)",
+    r"ignore (all |any |the )?(previous|prior|above|earlier) (instructions?|rules?|directions?|guidance)",
     r"(do not|don't|never) (tell|inform|notify|alert|mention) (this to )?(the )?(user|owner|human|operator)",
     r"(send|transfer|pay|wire|remit) .{0,40}(immediately|urgent|urgently|right now|asap|at once)",
     r"system (prompt|override|message|notice)\s*:",
@@ -30,12 +30,27 @@ INJECTION_PATTERNS = [
     r"(bypass|skip|override) (the )?(approval|human|review|policy)",
 ]
 # Zero-width / bidi-control characters are used to hide instructions from people reading the same text.
-HIDDEN_CHARS = re.compile("[​‌‍⁠﻿‪-‮⁦-⁩]")
+def _is_hidden(c):
+    o = ord(c)
+    # format chars (zero-width, bidi, soft hyphen, Unicode tag chars U+E00xx ...), private use, variation selectors, CGJ
+    return unicodedata.category(c) in ("Cf", "Co") or 0xFE00 <= o <= 0xFE0F or 0xE0100 <= o <= 0xE01EF or o == 0x034F
+
+
+class _Hidden:
+    """Drop-in for the old regex (.sub/.search) but covers every invisible class, not a short list."""
+    def sub(self, repl, text):
+        return "".join(c for c in str(text) if not _is_hidden(c))
+
+    def search(self, text):
+        return any(_is_hidden(c) for c in str(text))
+
+
+HIDDEN_CHARS = _Hidden()
 
 KNOWN_KEYS = {"currency", "per_payment_cap", "auto_approve_up_to", "daily_cap", "max_payments_per_hour",
               "max_payments_per_day", "max_pending_human", "duplicate_window_seconds", "pending_ttl_seconds",
               "allowed_payees", "blocked_payees", "blocked_categories", "human_review_categories"}
-PAYEE_KEYS = {"name", "categories", "max_amount", "daily_cap", "max_payments_per_day"}
+PAYEE_KEYS = {"name", "categories", "max_amount", "daily_cap", "max_payments_per_day", "paypal_email"}
 
 DEFAULT_POLICY = {
     "currency": "USD",
@@ -130,7 +145,9 @@ def validate_policy(p: dict) -> dict:
     for pid, info in p["allowed_payees"].items():
         if not isinstance(info, dict) or set(info) - PAYEE_KEYS:
             raise PolicyError(f"payee {pid!r}: unknown keys {sorted(set(info) - PAYEE_KEYS) if isinstance(info, dict) else info}")
-        if not info.get("categories") or not all(isinstance(c, str) for c in info["categories"]):
+        if "paypal_email" in info and not (isinstance(info["paypal_email"], str) and "@" in info["paypal_email"]):
+            raise PolicyError(f"payee {pid!r}: paypal_email must look like an email address")
+        if not isinstance(info.get("categories"), list) or not info["categories"] or not all(isinstance(c, str) for c in info["categories"]):
             raise PolicyError(f"payee {pid!r}: needs a non-empty categories list")
         for k in ("max_amount", "daily_cap"):
             if k in info:
@@ -152,7 +169,8 @@ def load_policy(path=None) -> dict:
 
 
 def _norm(t) -> str:
-    return unicodedata.normalize("NFKC", HIDDEN_CHARS.sub("", str(t)))
+    t = "".join(chr(ord(c) - 0xE0000) if 0xE0020 <= ord(c) <= 0xE007E else c for c in str(t))  # reveal tag-char text
+    return unicodedata.normalize("NFKC", HIDDEN_CHARS.sub("", t))
 
 
 def find_injection(*texts) -> list:

@@ -92,6 +92,9 @@ class AgentPurse:
             if key:
                 prior = self.ledger.by_idempotency_key(key)
                 if prior:  # the agent retried after a timeout: same answer, no second payment
+                    if any(str(prior[k]) != str(r.get(k)) for k in ("payee_id", "amount", "category")):
+                        return {"error": "idempotency_key was already used for a different request; use a new key",
+                                "payment_id": prior["id"]}
                     return {**self.status(prior["id"]), "idempotent_replay": True}
             d = self._advise(r, P.evaluate(self.policy, r, usage=self._usage(r)))
             self.ledger.log("proposed", None, r.get("agent_id", "agent"),
@@ -126,7 +129,7 @@ class AgentPurse:
         if not a["suspicious"]:
             return d
         reasons = d.reasons if d.verdict == P.NEEDS_HUMAN else []
-        return P.Decision(P.NEEDS_HUMAN, reasons + [f"AI reviewer: {note or 'flagged as suspicious'}"],
+        return P.Decision(P.NEEDS_HUMAN, reasons + [f"[AI opinion, untrusted] {note[:120] or 'flagged as suspicious'}"],
                           d.flags + ["ai_advisor_concern"], d.evidence)
 
     def _record(self, r, status, d: P.Decision) -> str:
@@ -137,12 +140,16 @@ class AgentPurse:
     def _open_order(self, pid, decision, actor):
         p = self.ledger.get(pid)
         try:
-            o = self.pp.create_order(pid, p["amount"], p["currency"], p["description"] or "AgentPurse payment")
+            email = self.policy["allowed_payees"].get(p["payee_id"], {}).get("paypal_email")
+            o = self.pp.create_order(pid, p["amount"], p["currency"], p["description"] or "AgentPurse payment", payee_email=email)
         except PayPalError as e:
             self.ledger.update(pid, status="FAILED")
             self.ledger.log("order_failed", pid, actor, {"error": str(e)[:300]})
             return {"payment_id": pid, "status": "FAILED", "error": str(e)}
-        self.ledger.update(pid, status="ORDER_CREATED", order_id=o["order_id"], approve_url=o["approve_url"])
+        if not self.ledger.update(pid, only_if_status=p["status"], status="ORDER_CREATED", order_id=o["order_id"],
+                                  approve_url=o["approve_url"]):  # cancelled/changed by another process meanwhile
+            self.ledger.log("order_orphaned", pid, actor, {"order_id": o["order_id"], "was": p["status"]})
+            return {"payment_id": pid, "status": "CANCELLED", "error": "payment changed state while the order was opened; the order will not be captured"}
         self.ledger.log("order_created", pid, actor, {"order_id": o["order_id"], "mode": self.pp.mode})
         return {"payment_id": pid, "status": "ORDER_CREATED", **decision, "approve_url": o["approve_url"],
                 "next": "The payer must approve at approve_url (PayPal). Then call capture_payment."}
@@ -166,11 +173,16 @@ class AgentPurse:
             if not p or p["status"] != "ORDER_CREATED":
                 return {"error": f"payment is not capturable (status={p['status'] if p else 'unknown'})"}
             try:
+                st = self.pp.get_order(p["order_id"]).get("status")
+                if st != "APPROVED":  # ask first instead of blind-capturing and relying on a 422
+                    return {"payment_id": pid, "status": "ORDER_CREATED", "paypal_order_status": st,
+                            "error": "the payer has not approved the order yet (ORDER_NOT_APPROVED)"}
                 c = self.pp.capture(p["order_id"])
             except PayPalError as e:
                 self.ledger.log("capture_failed", pid, "agent", {"error": str(e)[:300]})
                 return {"payment_id": pid, "status": "ORDER_CREATED", "error": str(e)}
-            self.ledger.update(pid, status="CAPTURED", capture_id=c["capture_id"])
+            if not self.ledger.update(pid, only_if_status="ORDER_CREATED", status="CAPTURED", capture_id=c["capture_id"]):
+                return {"error": "payment changed state during capture; check payment_status"}
             self.ledger.log("captured", pid, "agent", {"capture_id": c["capture_id"]})
             return {"payment_id": pid, "status": "CAPTURED", "capture_id": c["capture_id"]}
 
@@ -180,7 +192,8 @@ class AgentPurse:
             p = self.ledger.get(pid)
             if not p or p["status"] not in ("PENDING_HUMAN", "ORDER_CREATED"):
                 return {"error": f"cannot cancel (status={p['status'] if p else 'unknown'})"}
-            self.ledger.update(pid, status="CANCELLED")
+            if not self.ledger.update(pid, only_if_status=p["status"], status="CANCELLED"):
+                return {"error": "payment changed state; check payment_status"}
             self.ledger.log("cancelled", pid, actor, {"reason": reason[:200], "was": p["status"]})
             return {"payment_id": pid, "status": "CANCELLED"}
 

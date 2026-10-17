@@ -54,7 +54,7 @@ class PayPalClient:
             self._tok = r["access_token"]
         return self._tok
 
-    def create_order(self, ref, amount, currency, description):
+    def create_order(self, ref, amount, currency, description, payee_email=None):
         # PayPal-Request-Id = our payment id: a retried HTTP call can never create a second order
         body = {"intent": "CAPTURE",
                 "purchase_units": [{"reference_id": ref, "custom_id": ref, "description": description[:127],
@@ -62,6 +62,8 @@ class PayPalClient:
                 "payment_source": {"paypal": {"experience_context": {
                     "return_url": self.return_url, "cancel_url": self.cancel_url,
                     "user_action": "PAY_NOW", "shipping_preference": "NO_SHIPPING"}}}}
+        if payee_email:  # only honoured by PayPal for accounts permitted to take payment for that payee
+            body["purchase_units"][0]["payee"] = {"email_address": payee_email}
         r = self._call("POST", "/v2/checkout/orders", body, {"PayPal-Request-Id": ref})
         link = next((l["href"] for l in r.get("links", []) if l["rel"] in ("payer-action", "approve")), None)
         return {"order_id": r["id"], "status": r["status"], "approve_url": link}
@@ -106,7 +108,7 @@ class MockPayPal:
         self.db.execute("update mock_orders set status=? where id=?", (st, oid))
         self.db.commit()
 
-    def create_order(self, ref, amount, currency, description):
+    def create_order(self, ref, amount, currency, description, payee_email=None):
         oid = "MOCK" + uuid.uuid4().hex[:12].upper()
         self.db.execute("insert into mock_orders values(?,?,?)", (oid, "PAYER_ACTION_REQUIRED", str(amount)))
         self.db.commit()
