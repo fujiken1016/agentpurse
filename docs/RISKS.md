@@ -29,7 +29,7 @@
 * The Devpost page returned 403 to the fetch tool, and the only PayPal-hackathon winners post I could find (Dev Days 2025) gives almost no judge commentary, so the "why they won" column in ROLE_MODELS.md is labelled inference.
 
 ## Hygiene (checked before the PR)
-No keys, `.env` or `*.db` in the tree (`.gitignore` covers them). No personal name or contact data in files or in commit author fields (commits use the repository's existing noreply identity). No billable action was taken; sandbox keys were never used.
+No keys, `.env` or `*.db` in the tree (`.gitignore` covers them). No personal name or contact data in the files. **Not clean: the history contains one GitHub web-UI merge commit (`fa3112b`, the PR #1 merge) whose author field is a personal Gmail address.** Removing it needs a history rewrite and a force-push of the public `main`, which the owner has to decide; every other commit uses the noreply identity. No billable action was taken; sandbox keys were never used.
 
 ## Added after review round 1 (see REVIEW_R1.md)
 | # | Risk | Status |
@@ -39,3 +39,13 @@ No keys, `.env` or `*.db` in the tree (`.gitignore` covers them). No personal na
 | R20 | **Audit chain vs payments table**, unlinked `proposed` / `advisor` rows. | **Fixed** (round 2): every audit row naming a payment carries a hash of that payment row (`verify_ledger`, shown by `python -m agentpurse.audit`, the dashboard badge and `audit_trail`); `proposed`/`advisor` rows now carry the payment id. Open: the newest rows can still be deleted unless a head hash was published (`--expect-head`). |
 | R21 | **AI reviewer in the lock / CLI isolation.** | **Mostly fixed** (round 2): runs before the lock is taken, cached per request, neutral cwd, no tools, no slash commands, own system prompt, argv tested. Open: it has still never run against a logged-in CLI (`python -m agentpurse.advisor` is the 20-second self-test); the user-level Claude settings may still be loaded by the CLI. |
 | R22 | **Capture without re-check; unlimited probing.** | **Fixed** (round 2): capture re-checks payee/category and refuses orders older than `order_ttl_seconds`; every request (denied too) counts toward `max_requests_per_hour`. `simulate_payment` still excludes the AI reviewer (documented). |
+
+## Added after review round 2 (see REVIEW_R2.md)
+| # | Risk | Status |
+|---|---|---|
+| R23 | **Lost capture response**: PayPal completed the capture, we heard nothing, the ledger expired the order and freed the budget. | **Fixed**: `CAPTURE_UNKNOWN` (counted as spent, never expired); `payment_status` / `capture_payment` reconcile through `get_order`. |
+| R24 | **Dashboard threads shared one SQLite connection** (segfault on CPython 3.9). | **Fixed**: the connection is wrapped so every call is serialised and results are materialised. 4-thread test. |
+| R25 | **Audit hash covered only money columns.** | **Fixed**: whole row except `updated`; one test per column. State change + audit row now commit in one transaction. |
+| R26 | Budget window anchored on request time; human-approved late = counted early; crashed AUTO_APPROVED / ORDER_UNKNOWN rows immortal; human approval blocked by the request-rate rule; lock without timeout. | **Fixed** (see tests/test_round2.py). |
+| R27 | PII in `context`, no retention, no approver identity, head hash not published automatically. | Open (stated in README Limits). The audit CLI prints the head hash and the MCP server prints it at start. |
+| R28 | Git history contains one web-UI merge commit with a personal Gmail as author. | Open: needs the owner's decision (history rewrite + force-push of the public main). |

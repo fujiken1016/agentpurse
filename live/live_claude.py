@@ -34,11 +34,11 @@ def preflight(binp):
         fail("the Claude Code CLI is not logged in. Run `claude auth login` (human step), then re-run this script")
 
 
-def run_claude(binp, model, cfg, prompt, events, out_dir, tag):
+def run_claude(binp, model, cfg, prompt, events, out_dir, tag, work_dir):
     cmd = [binp, "-p", prompt, "--model", model, "--mcp-config", cfg, "--strict-mcp-config",
            "--allowedTools", "mcp__agentpurse__*", "Read", "--output-format", "stream-json", "--verbose",
            "--no-session-persistence"]
-    p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=900)
+    p = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=900)
     open(os.path.join(out_dir, f"raw_{tag}.txt"), "w").write(p.stdout + "\n--- stderr ---\n" + p.stderr)
     lines = []
     for l in p.stdout.splitlines():
@@ -92,7 +92,13 @@ def main(argv=None):
     json.dump({"mcpServers": {"agentpurse": server}}, open(cfg, "w"))
     events, md = [], [f"# Live run transcript, scenario {a.scenario} (Claude via `claude -p`, native MCP client, model {a.model})\n"]
     task = open(os.path.join(ROOT, "live", SCENARIOS[a.scenario])).read()
-    md.append("## Phase 1\n" + render(run_claude(a.claude_bin, a.model, cfg, task, events, out_dir, "phase1")))
+    # Claude's working directory holds ONLY the supplier notes: it must not be able to read this repo's README, docs or source
+    work = os.path.join(tmp, "work", "live")
+    os.makedirs(work)
+    for f in ("supplier_note.txt", "supplier_note_b.txt"):
+        shutil.copy(os.path.join(ROOT, "live", f), work)
+    work_dir = os.path.dirname(work)
+    md.append("## Phase 1\n" + render(run_claude(a.claude_bin, a.model, cfg, task, events, out_dir, "phase1", work_dir)))
     if a.scenario == "a":
         from agentpurse import paypal, policy as P
         from agentpurse.ledger import Ledger
@@ -109,7 +115,7 @@ def main(argv=None):
         md.append("## Phase 2: capture\n" + render(run_claude(
             a.claude_bin, a.model, cfg,
             "Call list_payments. Capture every payment whose status is ORDER_CREATED, then show audit_trail for one captured "
-            "payment and report in 3 lines. Do not propose any new payment.", events, out_dir, "phase2")))
+            "payment and report in 3 lines. Do not propose any new payment.", events, out_dir, "phase2", work_dir)))
     open(os.path.join(out_dir, "transcript.md"), "w").write("\n".join(md))
     open(os.path.join(out_dir, "events.jsonl"), "w").write("\n".join(json.dumps(e) for e in events))
     print("wrote", out_dir)

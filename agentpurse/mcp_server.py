@@ -126,6 +126,7 @@ def call_tool(svc: AgentPurse, name, args):
         rows = svc.ledger.audit_rows(args["payment_id"])
         return {"payment_id": args["payment_id"], "chain_ok": ok, "first_bad_seq": bad,
                 "payments_match_chain": svc.ledger.verify_ledger() == [],
+                "head": "%d:%s" % svc.ledger.head_hash(),
                 "events": [{"seq": r["seq"], "ts": r["ts"], "event": r["event"], "actor": r["actor"],
                             "detail": json.loads(r["detail"])} for r in rows]}
 
@@ -198,6 +199,7 @@ def main():
     ap.add_argument("--db", default="agentpurse.db")
     a = ap.parse_args()
     svc = AgentPurse(paypal.from_env(a.db), Ledger(a.db), P.load_policy(a.policy), advisor=advisor.from_env())
+    print(f"audit head {svc.ledger.head_hash()[0]}:{svc.ledger.head_hash()[1]} (publish it to detect deleted newest rows)", file=sys.stderr)
     print(f"agentpurse MCP ready (PayPal mode: {svc.pp.mode}, AI reviewer: {'on' if svc.advisor else 'off'})", file=sys.stderr)
     serve(svc)
 

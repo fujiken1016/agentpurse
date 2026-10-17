@@ -6,6 +6,8 @@ import json, os, subprocess, sys, tempfile
 from agentpurse.paypal import MockPayPal
 
 db = sys.argv[1] if len(sys.argv) > 1 else os.path.join(tempfile.mkdtemp(), "demo.db")
+if os.path.exists(db):  # a rerun would trip the duplicate guard and mislead; start clean
+    sys.exit(f"{db} already exists: pass a new path (or none) so the nine scenarios start from an empty ledger")
 proc = subprocess.Popen([sys.executable, "-m", "agentpurse.mcp_server", "--db", db], stdin=subprocess.PIPE,
                         stdout=subprocess.PIPE, text=True, bufsize=1)
 _id = 0

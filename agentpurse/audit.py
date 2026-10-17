@@ -2,7 +2,7 @@
 Also checks that every payment still matches the last state the chain recorded for it, prints the head hash (publish it
 somewhere append-only; pass it back with --expect-head to detect deleted newest rows).
 Exit code 0 = intact, 2 = tampering detected."""
-import argparse, json, sys, time
+import argparse, json, os, sys, time
 from .ledger import Ledger
 
 
@@ -13,11 +13,14 @@ def main(argv=None):
     ap.add_argument("--tail", type=int, default=20)
     ap.add_argument("--expect-head", help="'<seq>:<hash>' printed by an earlier run; fails if that row is gone or changed")
     a = ap.parse_args(argv)
+    if not os.path.exists(a.db):
+        print(f"FAILED: no such database: {a.db} (nothing was verified)")
+        return 2
     led = Ledger(a.db)
     for r in led.audit_rows(a.payment, a.tail):
         print(f"{r['seq']:>4} {time.strftime('%H:%M:%S', time.localtime(r['ts']))} {r['event']:<24} {r['payment_id'] or '-':<14} {r['actor']:<16} {r['detail'][:90]}")
     ok, bad, n = led.verify_audit()
-    print(f"\nhash chain: {'OK' if ok else 'BROKEN at seq %s' % bad} ({n} rows)")
+    print(f"\nhash chain: {'OK' if ok else 'BROKEN at seq %s' % bad} ({n} rows)" + ("  WARNING: empty log, nothing to verify" if n == 0 else ""))
     mism = led.verify_ledger()
     print(f"payments vs chain: {'OK' if not mism else 'MISMATCH ' + ', '.join(mism)}")
     seq, h = led.head_hash()

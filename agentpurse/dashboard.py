@@ -87,7 +87,10 @@ def make_handler(svc, token, port):
             if self.path == "/api/mock_payer_approve" and svc.pp.mode == "mock":
                 p = svc.ledger.get(pid)
                 if p and p["order_id"]:
-                    svc.pp.payer_approve(p["order_id"])
+                    try:
+                        svc.pp.payer_approve(p["order_id"])
+                    except Exception as e:
+                        return self._send(400, json.dumps({"error": str(e)[:120]}))
                     svc.ledger.log("mock_payer_approved", pid, "mock-payer", {})
                     return self._send(200, '{"ok":true}')
             self._send(400, '{"error":"bad request"}')

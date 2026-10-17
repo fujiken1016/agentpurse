@@ -82,7 +82,12 @@ class PayPalClient:
 
     def get_order(self, order_id):
         r = self._call("GET", f"/v2/checkout/orders/{order_id}")
-        return {"order_id": r["id"], "status": r["status"]}
+        out = {"order_id": r["id"], "status": r["status"]}
+        try:
+            out["capture_id"] = r["purchase_units"][0]["payments"]["captures"][0]["id"]
+        except (KeyError, IndexError, TypeError):
+            pass
+        return out
 
     def capture(self, order_id):
         r = self._call("POST", f"/v2/checkout/orders/{order_id}/capture", {},
@@ -140,7 +145,11 @@ class MockPayPal:
         self._set(oid, "APPROVED")
 
     def get_order(self, oid):
-        return {"order_id": oid, "status": self._status(oid)}
+        st = self._status(oid)
+        out = {"order_id": oid, "status": st}
+        if st == "COMPLETED":
+            out["capture_id"] = "CAP" + oid[4:]
+        return out
 
     def capture(self, oid):
         if self._status(oid) != "APPROVED":
