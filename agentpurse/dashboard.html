@@ -15,28 +15,65 @@ button,a.btn{min-height:48px;padding:0 18px;border-radius:10px;border:1px solid 
 button.go{background:var(--acc);border-color:var(--acc);color:#fff}button.no{color:var(--bad)}
 .why{color:var(--mut);font-size:14px;margin:6px 0 0;padding-left:18px}.flag{color:var(--bad);font-weight:600;font-size:14px}
 .empty{color:var(--mut)}code{font-size:13px}
+mark{background:color-mix(in srgb,var(--bad) 22%,transparent);color:inherit;border-radius:3px;padding:0 2px}
+.ctx{margin:8px 0 0;padding:10px;border:1px dashed var(--line);border-radius:8px;font-size:14px;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow:auto}
+summary{cursor:pointer;min-height:48px;display:flex;align-items:center;font-weight:600}
+input[type=text]{min-height:48px;width:100%;border:1px solid var(--line);border-radius:10px;padding:0 12px;font:inherit;background:var(--card);color:var(--fg)}
+label.ack{display:flex;gap:10px;align-items:center;min-height:48px;font-size:15px}label.ack input{width:24px;height:24px}
+button:disabled{opacity:.45;cursor:not-allowed}#msg{position:sticky;top:0;z-index:2;margin:0 0 8px;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-weight:600}
+#msg:empty{display:none}.ok{color:var(--ok)}.bad{color:var(--bad)}.chip{font-size:13px;color:var(--mut)}.mono{font-family:ui-monospace,monospace;font-size:12px}
+.hold{color:var(--warn);font-size:14px}
 </style></head><body><main>
 <h1>AgentPurse</h1><p class="sub">Your AI agent proposes. Policy decides. You approve what matters. PayPal moves the money.</p>
+<div id="msg" role="status" aria-live="polite"></div>
 <div class="card" id="budget"></div>
-<h2>Needs you</h2><div id="pending"><p class="empty">Nothing waiting.</p></div>
+<h2>Needs you <span class="chip" id="pcount"></span></h2><div id="pending"><p class="empty">Nothing waiting.</p></div>
 <h2>Ledger</h2><div id="ledger"></div>
+<h2>Audit log <span class="chip" id="chain"></span></h2><details class="card"><summary>Last events (hash-chained, append-only)</summary><div id="audit" class="mono"></div></details>
 </main>
 <script>
+const TOKEN="__TOKEN__";
 const $=id=>document.getElementById(id);
-const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-async function post(u,b){await fetch(u,{method:"POST",body:JSON.stringify(b)});load()}
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let busy=false,NOW=0,TTL=86400;
+const H={"Content-Type":"application/json","X-AgentPurse-Token":TOKEN};
+function say(t,cls){const m=$("msg");m.className=cls||"";m.textContent=t}
+async function post(u,b,okText){
+ if(busy)return;busy=true;document.querySelectorAll("button").forEach(x=>x.disabled=true);
+ try{const r=await fetch(u,{method:"POST",headers:H,body:JSON.stringify(b)});const j=await r.json();
+  if(!r.ok||j.error)say("Failed: "+(j.error||r.status),"bad");
+  else if(j.status=="DENIED")say("Blocked at approval time: "+(j.reasons||[]).join("; "),"bad");
+  else say(okText(j),"ok")}
+ catch(e){say("Network error: "+e,"bad")}
+ busy=false;load()}
+function ctxHtml(p,d){let c=esc(p.context||"");(d.evidence||[]).forEach(e=>{const x=esc(e);if(x&&c.includes(x))c=c.split(x).join("<mark>"+x+"</mark>")});
+ const miss=(d.evidence||[]).filter(e=>!c.includes("<mark>"+esc(e)+"</mark>"));
+ return p.context?`<details ${d.flags&&d.flags.length?"open":""}><summary>Text the agent read before asking</summary><div class="ctx">${c}</div>${miss.length?`<div class="flag">Matched: ${miss.map(esc).join(" / ")}</div>`:""}</details>`:""}
 function why(p){const d=p.decision||{};return (d.flags||[]).map(f=>`<div class="flag">&#9888; ${esc(f.replace(/_/g," "))}</div>`).join("")+
  `<ul class="why">${(d.reasons||[]).map(r=>`<li>${esc(r)}</li>`).join("")}</ul>`}
-function card(p,actions){return `<div class="card"><div class="row"><div><span class="amt">${esc(p.amount)} ${esc(p.currency)}</span> to <b>${esc(p.payee_id)}</b>
-<div class="sub" style="margin:0">${esc(p.description)} &middot; ${esc(p.category)}</div></div><span class="tag ${p.status}">${p.status.replace("_"," ")}</span></div>${why(p)}${actions||""}</div>`}
+function left(p){const s=Math.max(0,p.created+TTL-NOW),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return `<span class="hold">expires in ${h}h ${m}m</span>`}
+function card(p,actions){const d=p.decision||{};return `<div class="card" id="c_${p.id}"><div class="row"><div><span class="amt">${esc(p.amount)} ${esc(p.currency)}</span> to <b>${esc(p.payee_id)}</b>
+<div class="sub" style="margin:0">${esc(p.description)} &middot; ${esc(p.category)} &middot; <span class="mono">${esc(p.id)}</span></div></div><span class="tag ${p.status}">${p.status.replace("_"," ")}</span></div>${why(p)}${p.status=="PENDING_HUMAN"?ctxHtml(p,d):""}${actions||""}</div>`}
+function pendingActions(p){const flagged=((p.decision||{}).flags||[]).length>0;
+ return `<div style="margin-top:10px">${left(p)}<input type="text" id="n_${p.id}" placeholder="Note for the audit log (optional)" maxlength="300" aria-label="Note">
+ ${flagged?`<label class="ack"><input type="checkbox" id="k_${p.id}" onchange="document.getElementById('a_${p.id}').disabled=!this.checked"> I read the highlighted text and still want to pay</label>`:""}
+ <div class="row" style="margin-top:8px"><button class="go" id="a_${p.id}" ${flagged?"disabled":""} onclick="act('${p.id}',true)">Approve ${esc(p.amount)}</button><button class="no" onclick="act('${p.id}',false)">Reject</button></div></div>`}
+function act(id,ok){const note=($("n_"+id)||{}).value||"";
+ post(ok?"/api/approve":"/api/reject",{payment_id:id,note},j=>ok?"Approved. PayPal order created for the payer: "+(j.payment_id||id):"Rejected. The agent will see REJECTED.")}
 async function load(){
- const s=await (await fetch("/api/state")).json(),b=s.budget,pct=Math.min(100,100*b.spent_24h/b.daily_cap);
- $("budget").innerHTML=`<div class="row"><b>Last 24h</b><span>${b.spent_24h} / ${b.daily_cap} ${b.currency}</span></div><div class="bar"><i style="width:${pct}%"></i></div>
- <div class="sub" style="margin:0">Per payment max ${b.per_payment_cap} &middot; auto-approve up to ${b.auto_approve_up_to} &middot; PayPal mode: <code>${b.paypal_mode}</code></div>`;
- const pend=s.payments.filter(p=>p.status=="PENDING_HUMAN");
- $("pending").innerHTML=pend.length?pend.map(p=>card(p,`<div class="row" style="margin-top:10px"><button class="go" onclick="post('/api/approve',{payment_id:'${p.id}'})">Approve</button><button class="no" onclick="post('/api/reject',{payment_id:'${p.id}'})">Reject</button></div>`)).join(""):'<p class="empty">Nothing waiting.</p>';
+ let s;try{const r=await fetch("/api/state",{headers:H});s=await r.json();if(!r.ok)throw s.error}catch(e){say("Cannot reach AgentPurse: "+e,"bad");return}
+ NOW=s.now;const b=s.budget;TTL=b.pending_ttl_seconds;const pct=Math.min(100,100*b.spent_24h/b.daily_cap);
+ $("budget").innerHTML=`<div class="row"><b>Last 24h</b><span>${esc(b.spent_24h)} / ${esc(b.daily_cap)} ${esc(b.currency)}</span></div><div class="bar"><i style="width:${pct}%"></i></div>
+ <div class="sub" style="margin:0">Per payment max ${esc(b.per_payment_cap)} &middot; auto-approve up to ${esc(b.auto_approve_up_to)} &middot; ${b.payments_last_hour}/${b.max_payments_per_hour} this hour &middot; PayPal mode: <code>${esc(b.paypal_mode)}</code></div>`;
+ const pend=s.payments.filter(p=>p.status=="PENDING_HUMAN");$("pcount").textContent=pend.length?"("+pend.length+")":"";
+ const typing=document.activeElement&&document.activeElement.type=="text";
+ if(!typing||!pend.length){const keep={};pend.forEach(p=>{const n=$("n_"+p.id),k=$("k_"+p.id);keep[p.id]=[n&&n.value,k&&k.checked]});
+  $("pending").innerHTML=pend.length?pend.map(p=>card(p,pendingActions(p))).join(""):'<p class="empty">Nothing waiting.</p>';
+  pend.forEach(p=>{const v=keep[p.id];if(v){if(v[0])$("n_"+p.id).value=v[0];if(v[1]&&$("k_"+p.id)){$("k_"+p.id).checked=true;$("a_"+p.id).disabled=false}}})}
  $("ledger").innerHTML=s.payments.filter(p=>p.status!="PENDING_HUMAN").map(p=>card(p,
-  p.status=="ORDER_CREATED"?`<div class="row" style="margin-top:10px">${b.paypal_mode=="mock"?`<button onclick="post('/api/mock_payer_approve',{payment_id:'${p.id}'})">Play payer: approve on PayPal (mock)</button>`:`<a class="btn" target="_blank" rel="noopener" href="${esc(p.approve_url)}">Approve on PayPal</a>`}</div>`:"")).join("")||'<p class="empty">No payments yet.</p>';
+  p.status=="ORDER_CREATED"?`<div class="row" style="margin-top:10px">${b.paypal_mode=="mock"?`<button onclick="post('/api/mock_payer_approve',{payment_id:'${p.id}'},()=>'Mock payer approved. The agent can now capture.')">Play payer: approve on PayPal (mock)</button>`:`<a class="btn" target="_blank" rel="noopener" href="${esc(p.approve_url)}">Approve on PayPal</a>`}</div>`:"")).join("")||'<p class="empty">No payments yet.</p>';
+ const a=s.audit;$("chain").innerHTML=a.ok?`<span class="ok">chain intact (${a.rows} rows)</span>`:`<span class="bad">TAMPERING: chain broken at row ${a.first_bad_seq}</span>`;
+ $("audit").innerHTML=a.tail.slice().reverse().map(x=>`${x.seq} ${new Date(x.ts*1000).toLocaleTimeString()} ${esc(x.event)} ${esc(x.payment_id||"")} <span class="chip">${esc(x.actor)}</span>`).join("<br>");
 }
 load();setInterval(load,2500);
 </script></body></html>
