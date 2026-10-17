@@ -1,0 +1,12 @@
+{
+  "currency": "USD",
+  "per_payment_cap": "50.00",
+  "auto_approve_up_to": "20.00",
+  "daily_cap": "100.00",
+  "max_payments_per_hour": 5,
+  "allowed_payees": {
+    "acme-api": {"name": "Acme Data API", "categories": ["api", "data"]}
+  },
+  "blocked_categories": ["gift_card", "crypto", "gambling", "adult"],
+  "human_review_categories": ["subscription"]
+}

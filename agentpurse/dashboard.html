@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentPurse</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#14181f;--mut:#5b6472;--card:#fff;--line:#dfe3ea;--ok:#0a7d3b;--warn:#8a5a00;--bad:#b42318;--acc:#0b5fff}
+@media(prefers-color-scheme:dark){:root{--bg:#10141a;--fg:#e8ecf2;--mut:#9aa5b5;--card:#1a2029;--line:#2a3340;--ok:#4cc38a;--warn:#e5b04a;--bad:#ff7a70;--acc:#6ea2ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}h1{font-size:22px;margin:8px 0}h2{font-size:17px;margin:24px 0 8px}
+.sub{color:var(--mut);margin:0 0 16px}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
+.bar{height:10px;background:var(--line);border-radius:5px;overflow:hidden;margin:8px 0}.bar i{display:block;height:100%;background:var(--acc)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}.amt{font-weight:700;font-size:18px}
+.tag{font-size:13px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid currentColor}
+.DENIED,.REJECTED,.FAILED{color:var(--bad)}.PENDING_HUMAN{color:var(--warn)}.CAPTURED{color:var(--ok)}.ORDER_CREATED{color:var(--acc)}
+button,a.btn{min-height:48px;padding:0 18px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;text-decoration:none}
+button.go{background:var(--acc);border-color:var(--acc);color:#fff}button.no{color:var(--bad)}
+.why{color:var(--mut);font-size:14px;margin:6px 0 0;padding-left:18px}.flag{color:var(--bad);font-weight:600;font-size:14px}
+.empty{color:var(--mut)}code{font-size:13px}
+</style></head><body><main>
+<h1>AgentPurse</h1><p class="sub">Your AI agent proposes. Policy decides. You approve what matters. PayPal moves the money.</p>
+<div class="card" id="budget"></div>
+<h2>Needs you</h2><div id="pending"><p class="empty">Nothing waiting.</p></div>
+<h2>Ledger</h2><div id="ledger"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+async function post(u,b){await fetch(u,{method:"POST",body:JSON.stringify(b)});load()}
+function why(p){const d=p.decision||{};return (d.flags||[]).map(f=>`<div class="flag">&#9888; ${esc(f.replace(/_/g," "))}</div>`).join("")+
+ `<ul class="why">${(d.reasons||[]).map(r=>`<li>${esc(r)}</li>`).join("")}</ul>`}
+function card(p,actions){return `<div class="card"><div class="row"><div><span class="amt">${esc(p.amount)} ${esc(p.currency)}</span> to <b>${esc(p.payee_id)}</b>
+<div class="sub" style="margin:0">${esc(p.description)} &middot; ${esc(p.category)}</div></div><span class="tag ${p.status}">${p.status.replace("_"," ")}</span></div>${why(p)}${actions||""}</div>`}
+async function load(){
+ const s=await (await fetch("/api/state")).json(),b=s.budget,pct=Math.min(100,100*b.spent_24h/b.daily_cap);
+ $("budget").innerHTML=`<div class="row"><b>Last 24h</b><span>${b.spent_24h} / ${b.daily_cap} ${b.currency}</span></div><div class="bar"><i style="width:${pct}%"></i></div>
+ <div class="sub" style="margin:0">Per payment max ${b.per_payment_cap} &middot; auto-approve up to ${b.auto_approve_up_to} &middot; PayPal mode: <code>${b.paypal_mode}</code></div>`;
+ const pend=s.payments.filter(p=>p.status=="PENDING_HUMAN");
+ $("pending").innerHTML=pend.length?pend.map(p=>card(p,`<div class="row" style="margin-top:10px"><button class="go" onclick="post('/api/approve',{payment_id:'${p.id}'})">Approve</button><button class="no" onclick="post('/api/reject',{payment_id:'${p.id}'})">Reject</button></div>`)).join(""):'<p class="empty">Nothing waiting.</p>';
+ $("ledger").innerHTML=s.payments.filter(p=>p.status!="PENDING_HUMAN").map(p=>card(p,
+  p.status=="ORDER_CREATED"?`<div class="row" style="margin-top:10px">${b.paypal_mode=="mock"?`<button onclick="post('/api/mock_payer_approve',{payment_id:'${p.id}'})">Play payer: approve on PayPal (mock)</button>`:`<a class="btn" target="_blank" rel="noopener" href="${esc(p.approve_url)}">Approve on PayPal</a>`}</div>`:"")).join("")||'<p class="empty">No payments yet.</p>';
+}
+load();setInterval(load,2500);
+</script></body></html>
