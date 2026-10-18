@@ -16,6 +16,7 @@ import argparse, json, os, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+KEEP_RAW = [False]
 SCENARIOS = {"a": "TASK.md", "b": "TASK_B.md"}
 
 
@@ -39,7 +40,8 @@ def run_claude(binp, model, cfg, prompt, events, out_dir, tag, work_dir):
            "--allowedTools", "mcp__agentpurse__*", "Read", "--output-format", "stream-json", "--verbose",
            "--no-session-persistence"]
     p = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=900)
-    open(os.path.join(out_dir, f"raw_{tag}.txt"), "w").write(p.stdout + "\n--- stderr ---\n" + p.stderr)
+    if KEEP_RAW[0] or p.returncode != 0:  # raw CLI output contains local paths and session metadata: not kept unless asked
+        open(os.path.join(out_dir, f"raw_{tag}.txt"), "w").write(p.stdout + "\n--- stderr ---\n" + p.stderr)
     lines = []
     for l in p.stdout.splitlines():
         try:
@@ -80,15 +82,18 @@ def main(argv=None):
     ap.add_argument("--scenario", choices=sorted(SCENARIOS), default="a")
     ap.add_argument("--advisor", action="store_true", help="enable the AI reviewer in the MCP server (uses the same CLI login)")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--keep-raw", action="store_true", help="also write raw_*.txt and events.jsonl (contain local paths; do not commit)")
     a = ap.parse_args(argv)
+    KEEP_RAW[0] = a.keep_raw
     out_dir = a.out or os.path.join(ROOT, "live", "run_" + a.scenario)
     os.makedirs(out_dir, exist_ok=True)
     preflight(a.claude_bin)
     tmp = tempfile.mkdtemp()
     db, cfg, pol = os.path.join(tmp, "live.db"), os.path.join(tmp, "mcp.json"), os.path.join(ROOT, "policy.example.json")
     server = {"command": sys.executable, "args": ["-m", "agentpurse.mcp_server", "--db", db, "--policy", pol], "cwd": ROOT}
+    server["env"] = {"PYTHONPATH": ROOT}  # the CLI does not honour "cwd" for MCP servers: make the package importable explicitly
     if a.advisor:
-        server["env"] = {"AGENTPURSE_ADVISOR": "claude-cli", "AGENTPURSE_CLAUDE_BIN": a.claude_bin}
+        server["env"].update({"AGENTPURSE_ADVISOR": "claude-cli", "AGENTPURSE_CLAUDE_BIN": a.claude_bin})
     json.dump({"mcpServers": {"agentpurse": server}}, open(cfg, "w"))
     events, md = [], [f"# Live run transcript, scenario {a.scenario} (Claude via `claude -p`, native MCP client, model {a.model})\n"]
     task = open(os.path.join(ROOT, "live", SCENARIOS[a.scenario])).read()
@@ -117,7 +122,8 @@ def main(argv=None):
             "Call list_payments. Capture every payment whose status is ORDER_CREATED, then show audit_trail for one captured "
             "payment and report in 3 lines. Do not propose any new payment.", events, out_dir, "phase2", work_dir)))
     open(os.path.join(out_dir, "transcript.md"), "w").write("\n".join(md))
-    open(os.path.join(out_dir, "events.jsonl"), "w").write("\n".join(json.dumps(e) for e in events))
+    if a.keep_raw:
+        open(os.path.join(out_dir, "events.jsonl"), "w").write("\n".join(json.dumps(e) for e in events))
     print("wrote", out_dir)
     return 0
 

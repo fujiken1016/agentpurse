@@ -9,7 +9,7 @@ Round-1 items were verified fixed first: the cross-process budget race held unde
 | Distributed systems / concurrency | 5 | 7: lost-capture hole, window anchor, orphans, lock timeout and approval starvation fixed; lock still held during PayPal HTTP calls |
 | QA / test engineer | 7 | 8: every R2 finding has a test; the 6 surviving mutants are now covered |
 | Compliance / audit | 4 | 6: whole-row hash, atomic state+audit, wrong-path fix; no retention, no approver identity, head hash not auto-published |
-| First-time judge (5-minute cold read) | 6 | 6: demo rerun fixed, evidence caveats written down; the AI reviewer and native-MCP run still have never run for real |
+| First-time judge (5-minute cold read) | 6 | 6: demo rerun fixed, evidence caveats written down; (update: both have since run for real, see docs/LIVE_RUN.md) |
 | OSS maintainer / DX | 5 | 6: but the Gmail in git history (F4) is open and needs the owner |
 | Skeptical product / investor | 5 | 5: unchanged by design work (payee semantics, per-order payer approval, no sandbox run) |
 

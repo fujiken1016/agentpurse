@@ -16,7 +16,7 @@ class LiveDriver(unittest.TestCase):
     """live/live_claude.py against a stub CLI: proves the orchestration works the moment a real login exists."""
 
     def test_scenario_a_runs_end_to_end(self):
-        p, d = run()
+        p, d = run("--keep-raw")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         t = open(os.path.join(d, "transcript.md")).read()
         for s in ("ORDER_CREATED", "PENDING_HUMAN", "DENIED", "Human step", "Payer approves", "CAPTURED"):
