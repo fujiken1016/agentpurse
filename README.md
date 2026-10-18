@@ -7,7 +7,7 @@ The agent asks through MCP. A deterministic policy answers *deny*, *ask a human*
 * **Payouts (agent pays an allow-listed PayPal account, no click):** `method: "payout"` payees get PayPal Payouts. Small amounts (default up to 10.00) go through with no human; larger ones wait for a person. This is the genuinely autonomous path.
 * **Checkout (agent opens a PayPal checkout, the payer approves):** PayPal Orders v2 pays the merchant that owns the API credentials, so use it for purchases on *your own* merchant account. The payer approves every order.
 
-Both paths are implemented and tested offline; **neither has run against the live PayPal sandbox yet** (waiting for keys: `python3 live/sandbox_run.py` records the whole run).
+Both paths are implemented, tested offline, **and have run against the live PayPal sandbox** (checkout approved, captured once; a 5.00 USD payout with no click, SUCCESS): record in [docs/SANDBOX_RUN.md](docs/SANDBOX_RUN.md), transaction screen `docs/sandbox_evidence.png`. Reproduce with `python3 live/sandbox_run.py`.
 
 PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party dependencies**, MIT, 186 tests, runs offline with no keys.
 
@@ -72,7 +72,7 @@ flowchart LR
 | Reconcile | `GET /v2/checkout/orders/{id}`, `GET /v2/payments/captures/{id}` |
 | Auth | `POST /v1/oauth2/token`, refreshed once on 401 |
 
-The client only talks to `api-m.sandbox.paypal.com`; any other host is refused at construction. **This client has not yet been run against the live sandbox** (no keys yet). It is tested offline against a fake transport built from PayPal's documented shapes (`tests/test_paypal_client.py`). With keys it should work as is; expect small shape fixes. Setup (about 10 minutes, owner only) is documented at the top of `live/sandbox_run.py`; then:
+The client only talks to `api-m.sandbox.paypal.com`; any other host is refused at construction. This client **has run against the live sandbox** (2026-10-18, [docs/SANDBOX_RUN.md](docs/SANDBOX_RUN.md)); it is also tested offline against a fake transport built from PayPal's documented shapes (`tests/test_paypal_client.py`). No response-shape fixes were needed. Setup (about 10 minutes, owner only) is documented at the top of `live/sandbox_run.py`; then:
 ```
 python3 live/sandbox_run.py        # token check, demo.py, a Payout (no click), a Checkout + capture, audit check -> docs/SANDBOX_RUN.md
 ```

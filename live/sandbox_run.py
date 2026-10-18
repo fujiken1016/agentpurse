@@ -117,8 +117,12 @@ def main(argv=None):
     stamp = time.strftime("%H%M%S")
 
     # --- Checkout first: capturing it also puts money into the sandbox business account, which the payout then spends ---
-    open_orders = [r for r in svc.ledger.list(50) if r["status"] == "ORDER_CREATED"]
-    if open_orders:
+    open_orders = [r for r in svc.ledger.list(50) if r["status"] == "ORDER_CREATED" and r["payee_id"] == "acme-api"]
+    done = [r for r in svc.ledger.list(50) if r["payee_id"] == "acme-api" and r["status"] in ("CAPTURED", "CAPTURE_PENDING")]
+    if done and not open_orders:
+        c = {"status": "DONE"}
+        rep.add(f"3. Checkout already captured in an earlier run: order `{done[0]['order_id']}`, capture `{done[0]['capture_id']}` ({done[0]['status']})")
+    elif open_orders:
         c = {"payment_id": open_orders[0]["id"], "status": "ORDER_CREATED", "approve_url": open_orders[0]["approve_url"]}
         rep.add(f"3. Resuming the open Checkout order from the previous run: `{open_orders[0]['order_id']}`")
     else:
@@ -126,7 +130,9 @@ def main(argv=None):
                          "context": "Task: top up the Acme quota. Price list: 12.00 per 500 credits.", "idempotency_key": f"sb-order-{stamp}"})
         rep.add(f"3. Checkout order for 12.00: status **{c.get('status')}**, PayPal order `{svc.ledger.get(c['payment_id'])['order_id'] if c.get('payment_id') else '-'}`")
     captured = False
-    if c.get("status") != "ORDER_CREATED":
+    if c.get("status") == "DONE":
+        pass
+    elif c.get("status") != "ORDER_CREATED":
         rep.fail(f"order was not created: {json.dumps(c)[:300]}")
     else:
         url = c["approve_url"]
@@ -178,6 +184,7 @@ def main(argv=None):
 
 
 def finish(rep, a):
+    rep.add("\nFindings from the first runs (INSUFFICIENT_FUNDS before the first capture, currency check, return page): see docs/SANDBOX_NOTES.md")
     rep.add("\n**Result: " + ("INCOMPLETE / FAILED, see lines marked FAILED or 'not approved yet'" if rep.failed else "all steps passed") + "**")
     if not a.mock or a.out != os.path.join(ROOT, "docs", "SANDBOX_RUN.md"):
         open(a.out, "w").write("\n".join(rep.lines) + "\n")

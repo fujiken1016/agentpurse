@@ -30,8 +30,8 @@ class PayPalClient:
         if host.scheme != "https" or host.hostname not in ("api-m.sandbox.paypal.com", "api.sandbox.paypal.com"):
             raise PayPalError("AgentPurse refuses to run against a non-sandbox PayPal host")
         self.cid, self.secret, self.base, self._tok = client_id, secret, base.rstrip("/"), None
-        self.return_url = os.environ.get("PAYPAL_RETURN_URL", "https://example.com/return")
-        self.cancel_url = os.environ.get("PAYPAL_CANCEL_URL", "https://example.com/cancel")
+        self.return_url = os.environ.get("PAYPAL_RETURN_URL", "https://fujiken1016.github.io/agentpurse/thanks.html")
+        self.cancel_url = os.environ.get("PAYPAL_CANCEL_URL", "https://fujiken1016.github.io/agentpurse/cancel.html")
 
     def _call(self, method, path, body=None, headers=None, form=None, auth=None, _retry=True):
         h = {"Accept": "application/json"}

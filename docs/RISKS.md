@@ -3,7 +3,7 @@
 "Status" says whether each item is fixed, mitigated, or open.
 
 ## Submission facts that are still open
-* The PayPal client has not run against the live sandbox (no keys yet). First task when keys arrive: run `demo.py` with keys, fix shape mismatches, record a sandbox clip.
+* The PayPal client ran against the live sandbox on 2026-10-18 (docs/SANDBOX_RUN.md): no shape mismatches. Still to do: record the sandbox clip for the video (material: docs/sandbox_evidence.png).
 * The Devpost page could not be fetched by the tooling used to prepare this repo (HTTP 403): criteria and dates in ROLE_MODELS.md come from secondary sources and must be checked on the official page before submitting.
 * No hosted demo: the dashboard binds to 127.0.0.1 and would need real authentication before any hosting.
 
@@ -53,7 +53,7 @@ No keys, `.env` or `*.db` in the tree (`.gitignore` covers them). No personal na
 ## Added after review round 3 (see REVIEW_R3.md)
 | # | Risk | Status |
 |---|---|---|
-| R29 | **Orders v2 pays the credential owner**, so a buyer-side agent could not pay third parties. | **Addressed**: Payouts API path for `method: "payout"` payees (no payer click, lower auto-approve limit 10.00, same policy/human/audit gates), implemented and tested offline; Checkout is documented as "your own merchant account". Open: neither has run on the live sandbox (`live/sandbox_run.py` is ready); Payouts must be enabled for the sandbox app; unclaimed payouts stay pending up to 30 days. |
+| R29 | **Orders v2 pays the credential owner**, so a buyer-side agent could not pay third parties. | **Addressed**: Payouts API path for `method: "payout"` payees (no payer click, lower auto-approve limit 10.00, same policy/human/audit gates), implemented and tested offline; Checkout is documented as "your own merchant account". Both ran on the live sandbox (2026-10-18). Payouts must be enabled for the sandbox app; unclaimed payouts stay pending up to 30 days. |
 | R30 | **Lock held across PayPal HTTP.** | **Reduced**: `propose_payment` reserves spend (AUTO_APPROVED counts) and calls PayPal without the lock. Capture and human approval still hold it. |
 | R31 | Injection scan misses spaced-out letters and other languages. | Open, now measured: `tests/test_payouts_heuristics.py::test_known_misses_stay_measured`. Added language-neutral signals (amount never mentioned, mixed-script words) and BEC phrasing. |
 | R32 | Approver identity was the constant `human:dashboard`. | **Fixed**: `--approver` / `AGENTPURSE_APPROVER` / OS user is recorded. |

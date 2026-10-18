@@ -27,7 +27,7 @@ audit log that detects after-the-fact edits.
 Python standard library only: a JSON-RPC 2.0 MCP server over stdio, a pure-function policy engine, a SQLite ledger with a
 hash-chained audit table, a PayPal Orders v2 client with an exact-host sandbox guard, and a phone-friendly approval dashboard
 protected against cross-site requests. The same code runs against an offline PayPal mock, or the sandbox when two
-environment variables are set (not yet run against the live sandbox: no keys at the time of writing). 186 automated tests, including the PayPal client against a fake transport and a real MCP subprocess.
+environment variables are set (run against the live sandbox on 2026-10-18: checkout captured, payout SUCCESS, see docs/SANDBOX_RUN.md). 186 automated tests, including the PayPal client against a fake transport and a real MCP subprocess.
 
 ## How AI is used
 1. **A real Claude is the buyer.** It reads the job and supplier emails, chooses what to buy, calls the MCP tools and reacts to the answers.
@@ -41,7 +41,7 @@ environment variables are set (not yet run against the live sandbox: no keys at 
 ## PayPal technology used
 PayPal Payouts API (the agent pays an allow-listed PayPal account with no payer click, small amounts only) and REST Orders v2 (create with `payment_source.paypal`, `PAY_NOW`; capture; for purchases on the owner's own merchant account), OAuth2 client-credentials with refresh on 401,
 `PayPal-Request-Id` idempotency, sandbox environment. Designed around PayPal's consent model: money moves only after the payer
-approves on PayPal. Not yet exercised against the live sandbox.
+approves on PayPal.
 
 ## Challenges
 * Making "auto-approve" honest: with PayPal Orders the payer approves every order, so auto-approve means the agent may open the checkout itself.
