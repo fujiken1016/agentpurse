@@ -74,5 +74,7 @@ if mock.count():  # offline mode only
     show("7. Agent captures #1 after the payer approved", tool("capture_payment", payment_id=r1["payment_id"]))
 print("\naudit trail of #1:", json.dumps([e["event"] for e in tool("audit_trail", payment_id=r1["payment_id"])["events"]]))
 print("\nbudget now:", json.dumps(tool("check_budget")))
+h = json.loads(subprocess.run([sys.executable, "-m", "agentpurse.audit", "--db", db], capture_output=True, text=True).stdout.split("head: ")[-1].split()[0].join(["\"", "\""]))
+print("audit head (publish it to detect deleted newest rows):", h)
 print("ledger db:", db, "  -> view it: python -m agentpurse.dashboard --db", db, "  |  verify log: python -m agentpurse.audit --db", db)
 proc.stdin.close()

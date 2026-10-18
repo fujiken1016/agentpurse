@@ -30,6 +30,8 @@ INJECTION_PATTERNS = [
     r"you (must|are required to|have to|need to) (now )?(pay|send|transfer|wire)",
     r"disregard (the |your )?(budget|policy|limit|limits|rules)",
     r"(new|updated) (payment|payee|bank) (instructions|details)",
+    r"(bank|payment|account) (details|information) (have |has )?(changed|been updated)",
+    r"(vendor|supplier|payee) (has )?(changed|updated) (their )?(bank|account|payment)",
     r"(bypass|skip|override) (the )?(approval|human|review|policy)",
 ]
 # Zero-width / bidi-control characters are used to hide instructions from people reading the same text.
@@ -52,8 +54,8 @@ HIDDEN_CHARS = _Hidden()
 
 KNOWN_KEYS = {"currency", "per_payment_cap", "auto_approve_up_to", "daily_cap", "max_payments_per_hour",
               "max_payments_per_day", "max_pending_human", "duplicate_window_seconds", "pending_ttl_seconds",
-              "max_requests_per_hour", "order_ttl_seconds", "allowed_payees", "blocked_payees", "blocked_categories", "human_review_categories"}
-PAYEE_KEYS = {"name", "categories", "max_amount", "daily_cap", "max_payments_per_day", "paypal_email"}
+              "max_requests_per_hour", "order_ttl_seconds", "payout_auto_approve_up_to", "allowed_payees", "blocked_payees", "blocked_categories", "human_review_categories"}
+PAYEE_KEYS = {"name", "categories", "max_amount", "daily_cap", "max_payments_per_day", "paypal_email", "method"}
 
 DEFAULT_POLICY = {
     "currency": "USD",
@@ -66,6 +68,7 @@ DEFAULT_POLICY = {
     "duplicate_window_seconds": 600,
     "pending_ttl_seconds": 86400,     # a human decision older than this is void (EXPIRED)
     "max_requests_per_hour": 30,      # every request counts, denied ones too: caps probing and loops
+    "payout_auto_approve_up_to": "10.00",  # Payouts move money with NO payer click, so their auto-approve limit is lower
     "order_ttl_seconds": 10800,       # an uncaptured PayPal order older than this is not captured (PayPal orders lapse too)
     "allowed_payees": {               # payee id -> {name, categories, optional max_amount/daily_cap/max_payments_per_day}
         "acme-api": {"name": "Acme Data API", "categories": ["api", "data"]},
@@ -138,6 +141,7 @@ def validate_policy(p: dict) -> dict:
     if unknown:
         raise PolicyError(f"unknown policy keys: {sorted(unknown)}")
     cap, auto, day = (_dec(p[k], k) for k in ("per_payment_cap", "auto_approve_up_to", "daily_cap"))
+    _dec(p["payout_auto_approve_up_to"], "payout_auto_approve_up_to")  # effective limit = min(this, auto_approve_up_to)
     if auto > cap:
         raise PolicyError("auto_approve_up_to must be <= per_payment_cap")
     if cap > day:
@@ -151,6 +155,10 @@ def validate_policy(p: dict) -> dict:
     for pid, info in p["allowed_payees"].items():
         if not isinstance(info, dict) or set(info) - PAYEE_KEYS:
             raise PolicyError(f"payee {pid!r}: unknown keys {sorted(set(info) - PAYEE_KEYS) if isinstance(info, dict) else info}")
+        if info.get("method", "checkout") not in ("checkout", "payout"):
+            raise PolicyError(f"payee {pid!r}: method must be 'checkout' or 'payout'")
+        if info.get("method") == "payout" and not info.get("paypal_email"):
+            raise PolicyError(f"payee {pid!r}: method 'payout' needs paypal_email")
         if "paypal_email" in info and not (isinstance(info["paypal_email"], str) and "@" in info["paypal_email"]):
             raise PolicyError(f"payee {pid!r}: paypal_email must look like an email address")
         if not isinstance(info.get("categories"), list) or not info["categories"] or not all(isinstance(c, str) for c in info["categories"]):
@@ -198,6 +206,28 @@ def find_injection(*texts) -> list:
             if m:
                 hits.append(m.group(0)[:120])
     return hits
+
+
+def context_mismatch(amount, *texts) -> list:
+    """Language-neutral signals that do not depend on phrases: the text names money, but never the amount being paid;
+    or a word mixes Latin with Cyrillic/Greek letters (a homoglyph disguise)."""
+    out, seen = [], set()
+    for t in texts:
+        if not t:
+            continue
+        s = _norm(t)
+        for m in re.finditer(r"(?<![\w.])\$\s?(\d[\d,]*(?:\.\d{1,2})?)|(?<![\w.])(\d[\d,]*\.\d{2})(?![\d.])", s):
+            try:
+                seen.add(Decimal((m.group(1) or m.group(2)).replace(",", "")))
+            except InvalidOperation:
+                pass
+        for w in re.findall(r"\w+", str(t)):
+            scripts = {("L" if "LATIN" in unicodedata.name(c, "") else "X") for c in w if c.isalpha() and ("CYRILLIC" in unicodedata.name(c, "") or "GREEK" in unicodedata.name(c, "") or "LATIN" in unicodedata.name(c, ""))}
+            if len(scripts) == 2:
+                out.append(f"mixed-script word: {w[:30]}")
+    if seen and Decimal(str(amount)) not in seen:
+        out.append("text mentions " + ", ".join(sorted(str(x) for x in seen))[:60] + f" but never the amount {amount}")
+    return out
 
 
 def scan_injection(*texts) -> list:
@@ -270,11 +300,18 @@ def _evaluate(policy, req, u: Usage) -> Decision:
         flags.append("possible_prompt_injection")
         evidence += hits
         soft.append("text the agent read contains instruction-like payment pressure")
+    mm = context_mismatch(amount, req.get("context"))
+    if mm:
+        flags.append("context_mismatch")
+        evidence += [x for x in mm if x.startswith("mixed-script")]
+        soft.append("text the agent read disagrees with the request: " + "; ".join(mm))
     if has_hidden_chars(req.get("description"), req.get("context")):
         flags.append("hidden_characters")
         soft.append("text the agent read contains invisible characters (a way to hide instructions)")
     if cat in policy["human_review_categories"]:
         soft.append(f"category '{cat}' always needs a human")
+    if payee is not None and payee.get("method") == "payout" and amount > min(Decimal(policy["payout_auto_approve_up_to"]), Decimal(policy["auto_approve_up_to"])):
+        soft.append(f"{amount} is above the payout auto-approve limit {min(Decimal(policy['payout_auto_approve_up_to']), Decimal(policy['auto_approve_up_to']))} (payouts need no payer click)")
     if amount > Decimal(policy["auto_approve_up_to"]):
         soft.append(f"{amount} is above the auto-approve limit {policy['auto_approve_up_to']}")
     if soft:

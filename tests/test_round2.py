@@ -1,4 +1,4 @@
-import os, subprocess, sys, tempfile, threading, unittest
+import contextlib, io, os, subprocess, sys, tempfile, threading, unittest
 from agentpurse.ledger import Ledger
 from agentpurse.paypal import MockPayPal, PayPalUnknown, CapturePending
 from agentpurse.service import AgentPurse, _XLock
@@ -126,7 +126,9 @@ class AuditScope(unittest.TestCase):
 
     def test_audit_cli_on_a_missing_file_fails(self):
         from agentpurse import audit
-        self.assertEqual(audit.main(["--db", os.path.join(tempfile.mkdtemp(), "typo.db")]), 2)
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = audit.main(["--db", os.path.join(tempfile.mkdtemp(), "typo.db")])
+        self.assertEqual(rc, 2)
 
     def test_audit_cli_head_check(self):
         from agentpurse import audit
@@ -135,10 +137,12 @@ class AuditScope(unittest.TestCase):
         svc = AgentPurse(MockPayPal(d), led, policy())
         svc.propose(req())
         seq, h = led.head_hash()
-        self.assertEqual(audit.main(["--db", d, "--expect-head", f"{seq}:{h}"]), 0)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(audit.main(["--db", d, "--expect-head", f"{seq}:{h}"]), 0)
         led.db.execute("delete from audit where seq=?", (seq,))
         led.db.commit()
-        self.assertEqual(audit.main(["--db", d, "--expect-head", f"{seq}:{h}"]), 2)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(audit.main(["--db", d, "--expect-head", f"{seq}:{h}"]), 2)
 
 
 class Threads(unittest.TestCase):

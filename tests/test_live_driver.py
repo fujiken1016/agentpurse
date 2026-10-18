@@ -18,15 +18,18 @@ class LiveDriver(unittest.TestCase):
     def test_scenario_a_runs_end_to_end(self):
         p, d = run("--keep-raw")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        t = open(os.path.join(d, "transcript.md")).read()
+        with open(os.path.join(d, "transcript.md")) as f:
+            t = f.read()
         for s in ("ORDER_CREATED", "PENDING_HUMAN", "DENIED", "Human step", "Payer approves", "CAPTURED"):
             self.assertIn(s, t)
-        self.assertGreater(len(open(os.path.join(d, "events.jsonl")).read().splitlines()), 8)
+        with open(os.path.join(d, "events.jsonl")) as f:
+            self.assertGreater(len(f.read().splitlines()), 8)
 
     def test_scenario_b(self):
         p, d = run("--scenario", "b")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertIn("ORDER_CREATED", open(os.path.join(d, "transcript.md")).read())
+        with open(os.path.join(d, "transcript.md")) as f:
+            self.assertIn("ORDER_CREATED", f.read())
 
     def test_not_logged_in_fails_clearly(self):
         p, d = run(env={"FAKE_LOGGED_OUT": "1"})

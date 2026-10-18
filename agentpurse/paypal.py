@@ -107,6 +107,32 @@ class PayPalClient:
         r = self._call("GET", f"/v2/payments/captures/{capture_id}")
         return {"capture_id": r["id"], "status": r["status"]}
 
+    # --- Payouts API: the agent pays an allow-listed PayPal account directly, no payer click -------------
+    def create_payout(self, ref, amount, currency, note, email):
+        """POST /v1/payments/payouts, one item. `ref` is both sender_batch_id and PayPal-Request-Id, so a retry cannot pay twice."""
+        body = {"sender_batch_header": {"sender_batch_id": ref, "email_subject": "Payment from AgentPurse"[:120]},
+                "items": [{"recipient_type": "EMAIL", "receiver": email, "sender_item_id": ref,
+                           "amount": {"value": str(amount), "currency": currency}, "note": (note or "")[:160]}]}
+        r = self._call("POST", "/v1/payments/payouts", body, {"PayPal-Request-Id": ref})
+        h = r.get("batch_header", {})
+        if "payout_batch_id" not in h:
+            raise PayPalError(f"payout response had no batch id: {str(r)[:200]}")
+        return {"payout_id": h["payout_batch_id"], "status": h.get("batch_status", "PENDING")}
+
+    def get_payout(self, payout_id):
+        r = self._call("GET", f"/v1/payments/payouts/{payout_id}")
+        items = r.get("items") or []
+        item = items[0].get("transaction_status") if items else None
+        return {"payout_id": payout_id, "status": r.get("batch_header", {}).get("batch_status"), "item_status": item}
+
+
+def _locked(f):
+    def w(self, *a, **k):
+        with self._lk:
+            return f(self, *a, **k)
+    w.__name__ = f.__name__
+    return w
+
 
 class MockPayPal:
     """Offline stand-in with the same method shapes, persisted in SQLite so the MCP server and the dashboard
@@ -114,25 +140,30 @@ class MockPayPal:
     mode = "mock"
 
     def __init__(self, path=":memory:"):
-        import sqlite3
+        import sqlite3, threading
+        self._lk = threading.RLock()  # one sqlite connection shared by threads: serialise every method
         self.db = sqlite3.connect(path, check_same_thread=False)
-        self.capture_status, self.captures = "COMPLETED", {}
+        self.capture_status, self.captures, self.payout_status = "COMPLETED", {}, "SUCCESS"
         self.db.execute("create table if not exists mock_orders(id text primary key, status text, amount text)")
         self.db.commit()
 
+    @_locked
     def count(self):
         return self.db.execute("select count(*) from mock_orders").fetchone()[0]
 
+    @_locked
     def _status(self, oid):
         r = self.db.execute("select status from mock_orders where id=?", (oid,)).fetchone()
         if not r:
             raise PayPalError("RESOURCE_NOT_FOUND")
         return r[0]
 
+    @_locked
     def _set(self, oid, st):
         self.db.execute("update mock_orders set status=? where id=?", (st, oid))
         self.db.commit()
 
+    @_locked
     def create_order(self, ref, amount, currency, description, payee_email=None):
         oid = "MOCK" + uuid.uuid4().hex[:12].upper()
         self.db.execute("insert into mock_orders values(?,?,?)", (oid, "PAYER_ACTION_REQUIRED", str(amount)))
@@ -140,10 +171,12 @@ class MockPayPal:
         return {"order_id": oid, "status": "PAYER_ACTION_REQUIRED",
                 "approve_url": f"https://www.sandbox.paypal.com/checkoutnow?token={oid}"}
 
+    @_locked
     def payer_approve(self, oid):
         self._status(oid)
         self._set(oid, "APPROVED")
 
+    @_locked
     def get_order(self, oid):
         st = self._status(oid)
         out = {"order_id": oid, "status": st}
@@ -151,6 +184,7 @@ class MockPayPal:
             out["capture_id"] = "CAP" + oid[4:]
         return out
 
+    @_locked
     def capture(self, oid):
         if self._status(oid) != "APPROVED":
             raise PayPalError("UNPROCESSABLE_ENTITY ORDER_NOT_APPROVED: payer has not approved the order")
@@ -162,8 +196,34 @@ class MockPayPal:
         self._set(oid, "COMPLETED")
         return {"order_id": oid, "status": "COMPLETED", "capture_id": cid}
 
+    @_locked
     def get_capture(self, cid):
         return {"capture_id": cid, "status": self.captures.get(cid, "COMPLETED")}
+
+    @_locked
+    def create_payout(self, ref, amount, currency, note, email):
+        """Mock of the Payouts API. Idempotent on `ref` like PayPal-Request-Id. `payout_status` is a test hook (SUCCESS / PENDING / DENIED ...)."""
+        self.db.execute("create table if not exists mock_payouts(ref text primary key, id text, status text, email text, amount text)")
+        r = self.db.execute("select id, status from mock_payouts where ref=?", (ref,)).fetchone()
+        if r:
+            return {"payout_id": r[0], "status": r[1]}
+        pid = "MOCKPAYOUT" + uuid.uuid4().hex[:10].upper()
+        self.db.execute("insert into mock_payouts values(?,?,?,?,?)", (ref, pid, self.payout_status, email, str(amount)))
+        self.db.commit()
+        return {"payout_id": pid, "status": self.payout_status}
+
+    @_locked
+    def get_payout(self, pid):
+        self.db.execute("create table if not exists mock_payouts(ref text primary key, id text, status text, email text, amount text)")
+        r = self.db.execute("select status from mock_payouts where id=?", (pid,)).fetchone()
+        if not r:
+            raise PayPalError("RESOURCE_NOT_FOUND")
+        return {"payout_id": pid, "status": r[0], "item_status": "SUCCESS" if r[0] == "SUCCESS" else r[0]}
+
+    @_locked
+    def set_payout_status(self, pid, status):
+        self.db.execute("update mock_payouts set status=? where id=?", (status, pid))
+        self.db.commit()
 
 
 def from_env(mock_db=":memory:"):

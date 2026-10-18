@@ -1,6 +1,8 @@
 """SQLite ledger + tamper-evident audit log.
 
 Payment statuses: DENIED, PENDING_HUMAN, REJECTED, EXPIRED, CANCELLED, AUTO_APPROVED, ORDER_CREATED, CAPTURED, FAILED, plus
+PAYOUT_PENDING / PAID (Payouts API: the agent paid an allow-listed PayPal account directly; PAID = batch SUCCESS),
+AUTO_APPROVED counts as spent too (a reservation while the PayPal call is in flight),
 ORDER_UNKNOWN (PayPal did not answer the create call; retried with the same PayPal-Request-Id), CAPTURE_UNKNOWN (no answer to
 the capture call; reconciled through get_order, never expired) and CAPTURE_PENDING
 (PayPal accepted the capture but it is not COMPLETED yet; both count as spent until resolved).
@@ -24,8 +26,8 @@ create table if not exists audit(
   seq integer primary key autoincrement, ts real, event text, payment_id text, actor text,
   detail text, prev_hash text, hash text);
 """
-SPENDING = ("ORDER_CREATED", "ORDER_UNKNOWN", "CAPTURE_PENDING", "CAPTURE_UNKNOWN", "CAPTURED")                      # statuses that reserve budget
-LIVE = ("PENDING_HUMAN", "AUTO_APPROVED", "ORDER_CREATED", "ORDER_UNKNOWN", "CAPTURE_PENDING", "CAPTURE_UNKNOWN", "CAPTURED")  # statuses a duplicate can collide with
+SPENDING = ("AUTO_APPROVED", "PAYOUT_PENDING", "PAID", "ORDER_CREATED", "ORDER_UNKNOWN", "CAPTURE_PENDING", "CAPTURE_UNKNOWN", "CAPTURED")                      # statuses that reserve budget
+LIVE = ("PENDING_HUMAN", "AUTO_APPROVED", "PAYOUT_PENDING", "PAID", "ORDER_CREATED", "ORDER_UNKNOWN", "CAPTURE_PENDING", "CAPTURE_UNKNOWN", "CAPTURED")  # statuses a duplicate can collide with
 GENESIS = "0" * 64
 
 
@@ -149,7 +151,7 @@ class Ledger:
         now = kw["updated"] = self.clock()
         cols = ",".join(f"{k}=?" for k in kw)
         sql, args = f"update payments set {cols}", [*kw.values()]
-        if kw.get("status") in ("ORDER_CREATED", "ORDER_UNKNOWN"):  # money is committed from here: anchor the budget window
+        if kw.get("status") in ("ORDER_CREATED", "ORDER_UNKNOWN", "PAYOUT_PENDING", "PAID"):  # money is committed from here: anchor the budget window
             sql, args = sql + ",committed_at=coalesce(committed_at,?)", args + [now]
         sql, args = sql + " where id=?", args + [pid]
         if only_if_status:

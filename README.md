@@ -1,10 +1,15 @@
 # AgentPurse
 
 **Give your AI agent a PayPal budget it cannot exceed, be tricked past, or use to pay the same bill twice.**
-Caveats are under Limits, and we list them ourselves.
-The agent asks through MCP. A deterministic policy answers *deny*, *ask a human*, or *open a PayPal order*. The human keeps the last word on PayPal's own approval page.
+The agent asks through MCP. A deterministic policy answers *deny*, *ask a human*, or *pay*. Caveats are under Limits, and we list them ourselves.
 
-PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party dependencies**, MIT, 167 tests, runs offline with no keys.
+**Two ways money moves, both behind the same policy, human approval and audit log:**
+* **Payouts (agent pays an allow-listed PayPal account, no click):** `method: "payout"` payees get PayPal Payouts. Small amounts (default up to 10.00) go through with no human; larger ones wait for a person. This is the genuinely autonomous path.
+* **Checkout (agent opens a PayPal checkout, the payer approves):** PayPal Orders v2 pays the merchant that owns the API credentials, so use it for purchases on *your own* merchant account. The payer approves every order.
+
+Both paths are implemented and tested offline; **neither has run against the live PayPal sandbox yet** (waiting for keys: `python3 live/sandbox_run.py` records the whole run).
+
+PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party dependencies**, MIT, 186 tests, runs offline with no keys.
 
 ![Approval screen on a phone: the text the agent read, with the injected phrases highlighted](docs/dashboard-approval-375px.jpg)
 
@@ -13,7 +18,7 @@ PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party de
 git clone https://github.com/fujiken1016/agentpurse && cd agentpurse
 python3 demo.py /tmp/ap.db                          # a scripted agent talks to the real MCP server: 9 scenarios
 python3 -m agentpurse.dashboard --db /tmp/ap.db     # open http://127.0.0.1:8787  (approve / reject, audit log)
-python3 -m unittest discover -s tests               # 167 tests
+python3 -m unittest discover -s tests               # 186 tests
 ```
 Without PayPal keys it uses an offline mock with the same response shapes as PayPal Orders v2.
 
@@ -35,6 +40,15 @@ Without PayPal keys it uses an offline mock with the same response shapes as Pay
 | A web page drives the approval dashboard | per-run token, Host check (DNS rebinding), JSON-only POST, CSP | 403 |
 | Misconfigured policy | typo keys and inconsistent limits refuse to load; any evaluation error fails closed | never silently weaker |
 
+## Where AI is used, and where it is not
+| Where | What the AI does | What it can never do |
+|---|---|---|
+| **The shopping agent** (Claude via MCP) | Reads the job and the supplier text, chooses what to buy, calls the tools, reacts to DENIED / PENDING_HUMAN. [docs/LIVE_RUN.md](docs/LIVE_RUN.md) is a real Claude doing exactly this (raw log included). | Spend outside the policy. A DENIED is final. |
+| **Optional AI reviewer** (`AGENTPURSE_ADVISOR=claude-cli`, off by default, local Claude Code CLI, no extra key) | Reads each request the rules did not deny and may say "suspicious" (mismatch, pressure, social engineering). That turns an auto-approval into **human review** and puts its note on the approval card. | Approve, lift a DENY, or soften a human-review. The whole reply must be one JSON object (quoted attacker text cannot spoof a verdict); if the reviewer is down or unparseable, an auto-approval also goes to a human. Its note is shown labelled "AI opinion, untrusted". 9 tests. |
+| **The policy decision** | Nothing. Pure deterministic rules a risk team can unit-test and read. | n/a: a model here could be talked out of its rules, so none is allowed to decide. |
+
+The AI is asked for caution, never for permission. `simulate_payment` and the server `instructions` also let the agent ask "would this pass?" and self-correct instead of retrying blindly.
+
 ## How it works
 ```mermaid
 flowchart LR
@@ -48,36 +62,36 @@ flowchart LR
   C --> D
 ```
 
-## Where AI is used, and where it is not
-| Where | What the AI does | What it can never do |
-|---|---|---|
-| **The shopping agent** (Claude via MCP) | Reads the job and the supplier text, chooses what to buy, calls the tools, reacts to DENIED / PENDING_HUMAN. [docs/LIVE_RUN.md](docs/LIVE_RUN.md) is a real Claude doing exactly this (raw log included). | Spend outside the policy. A DENIED is final. |
-| **Optional AI reviewer** (`AGENTPURSE_ADVISOR=claude-cli`, off by default, local Claude Code CLI, no extra key) | Reads each request the rules did not deny and may say "suspicious" (mismatch, pressure, social engineering). That turns an auto-approval into **human review** and puts its note on the approval card. | Approve, lift a DENY, or soften a human-review. The whole reply must be one JSON object (quoted attacker text cannot spoof a verdict); if the reviewer is down or unparseable, an auto-approval also goes to a human. Its note is shown labelled "AI opinion, untrusted". 9 tests. |
-| **The policy decision** | Nothing. Pure deterministic rules a risk team can unit-test and read. | n/a: a model here could be talked out of its rules, so none is allowed to decide. |
-
-The AI is asked for caution, never for permission. `simulate_payment` and the server `instructions` also let the agent ask "would this pass?" and self-correct instead of retrying blindly.
-
 ## PayPal APIs used
 | Step | Call |
 |---|---|
 | Open checkout | `POST /v2/checkout/orders` intent `CAPTURE`, `payment_source.paypal`, `user_action: PAY_NOW`, `PayPal-Request-Id` = our payment id |
 | Payer consent | redirect to the `payer-action` link |
 | Move money | `POST /v2/checkout/orders/{id}/capture` (a `PENDING` capture is not reported as success) |
+| Pay an allow-listed account | `POST /v1/payments/payouts` (`sender_batch_id` and `PayPal-Request-Id` = our payment id), then `GET /v1/payments/payouts/{id}` to settle PENDING |
+| Reconcile | `GET /v2/checkout/orders/{id}`, `GET /v2/payments/captures/{id}` |
 | Auth | `POST /v1/oauth2/token`, refreshed once on 401 |
 
-The client only talks to `api-m.sandbox.paypal.com`; any other host is refused at construction. **This client has not yet been run against the live sandbox** (no keys yet). It is tested offline against a fake transport built from PayPal's documented shapes (`tests/test_paypal_client.py`). With keys it should work as is; expect small shape fixes:
+The client only talks to `api-m.sandbox.paypal.com`; any other host is refused at construction. **This client has not yet been run against the live sandbox** (no keys yet). It is tested offline against a fake transport built from PayPal's documented shapes (`tests/test_paypal_client.py`). With keys it should work as is; expect small shape fixes. Setup (about 10 minutes, owner only) is documented at the top of `live/sandbox_run.py`; then:
 ```
-export PAYPAL_CLIENT_ID=...  PAYPAL_CLIENT_SECRET=...      # sandbox REST app
-# optional: PAYPAL_RETURN_URL / PAYPAL_CANCEL_URL
-python3 demo.py
+python3 live/sandbox_run.py        # token check, demo.py, a Payout (no click), a Checkout + capture, audit check -> docs/SANDBOX_RUN.md
 ```
 
 ## Where it fits next to PayPal's own agent tooling
 PayPal publishes an Agent Toolkit and an MCP server that expose PayPal APIs (orders, invoices, disputes, subscriptions) to agents
 ([PayPal developer blog](https://developer.paypal.com/community/blog/paypal-agentic-ai-toolkit/)). Those give an agent the *ability* to call PayPal.
-AgentPurse is the *permission* layer in front of that ability: allow-lists, caps, velocity, a human for the exceptions, an audit trail. As far as we could
-read, the toolkit's announcement lists payments, invoices, disputes, subscriptions and reporting tools but no spending limits, human-approval step or audit
-trail. It is not a replacement; the same policy could gate calls to the official server (not built, not tested). Check PayPal's current docs before relying on this comparison.
+AgentPurse is the *permission* layer in front of that ability: allow-lists, caps, velocity, a human for the exceptions, an audit trail. The toolkit's announcement (read 2026-10-18) lists payments, invoices, disputes, subscriptions and reporting tools and does not mention spending limits, a human-approval step for the developer's agent, or an audit trail. It is not a replacement; the same policy could gate calls to the official server (not built, not tested).
+
+| | AgentPurse | PayPal Agent Toolkit / MCP | spendwall |
+|---|---|---|---|
+| What it is | policy + approval + audit layer in front of PayPal, MCP-first | PayPal APIs as agent tools (payments, invoices, disputes, subscriptions, reporting) | payment-policy firewall for agent refunds |
+| Spending limits, allow-list, velocity | yes (deterministic) | not mentioned in the announcement | yes |
+| Human sees the text the agent read | yes (highlighted) | no | bound human approval |
+| Audit | hash-chained, covers the payments table | not mentioned | yes |
+| Storage / scale | SQLite, one machine | n/a | Postgres, reservations, webhooks |
+| Run it | 30 seconds, no dependencies | needs PayPal keys | needs Postgres |
+
+PayPal column: read on 2026-10-18 from the [announcement](https://developer.paypal.com/community/blog/paypal-agentic-ai-toolkit/) (TypeScript; Python "coming soon"); features may have changed since. spendwall column: from its README as read earlier (see docs/ROLE_MODELS.md).
 
 ## Use it from Claude (MCP)
 ```
@@ -98,25 +112,10 @@ or in `claude_desktop_config.json`: `{"mcpServers": {"agentpurse": {"command": "
 
 Copy `policy.example.json` to start; `docs/` has the rest: [SUBMISSION.md](docs/SUBMISSION.md), [VIDEO_SHOTLIST.md](docs/VIDEO_SHOTLIST.md), [RISKS.md](docs/RISKS.md), [ROLE_MODELS.md](docs/ROLE_MODELS.md).
 
-## Tests (167)
-| Suite | Tests |
-|---|---|
-| Policy rules: boundaries, hostile input (NaN, look-alike payees, zero-width tricks), policy-file validation | 26 |
-| Service flows: duplicates, idempotency, human flow, expiry, cancel, audit chain | 32 |
-| Dashboard security and approval flow | 8 |
-| PayPal client against a fake transport (request shapes, token refresh, errors) | 10 |
-| MCP protocol, tool schemas, real stdio subprocess | 12 |
-| Cross-process race (8 real processes), CAPTURE_PENDING / ORDER_UNKNOWN, audit scope, capture re-check, AI reviewer outside the lock | 15 |
-| Round-2 fixes (lost capture response, budget window, audit scope per column, atomic audit, lock timeout, thread safety, reviewer cache) | 18 |
-| Live driver `live/live_claude.py` against a stub CLI | 4 |
-| AI reviewer CLI wrapper (argv, isolation) | 2 |
-| Original suite (wiring, ledger, demo flows) | 20 |
-| Review-round-1 hardening (invisible Unicode, key reuse, cancel loops, compare-and-swap, payee) | 11 |
-| AI reviewer can only escalate (fake advisor) | 9 |
-
 ## Limits (honest)
-* **Who gets paid.** With plain Orders v2 the money goes to the merchant that owns the REST credentials. If a payee has `paypal_email` in the policy, it is sent as `purchase_units[].payee`, which PayPal only accepts for accounts allowed to take payment on that payee's behalf. Without it, the allow-list is enforced by AgentPurse, not by PayPal. Paying arbitrary third parties would need the Payouts API (listed under next steps, not built).
-* **The lock is held while AgentPurse talks to PayPal** (so a slow PayPal call delays other agents; the lock waits at most 60 s, then the call fails with "busy, retry").
+* **Who gets paid.** Checkout (Orders v2) pays the merchant that owns the credentials; only Payout payees (`method: "payout"` + `paypal_email`) are paid to a third party. A Checkout payee's `paypal_email` is sent as `purchase_units[].payee`, which PayPal accepts only for permitted accounts. Payouts must be enabled for the PayPal app, and PayPal holds unclaimed payouts for 30 days (they stay counted as spent).
+* **The agent declares the category.** Policy checks that the payee may sell that category and applies per-payee `max_amount` / daily caps (see `policy.example.json`), but it cannot verify what was really bought.
+* **The service lock is held during capture and during a human approval's PayPal call**, not during `propose_payment` (spend is reserved as AUTO_APPROVED, the lock is released, then PayPal is called). A slow PayPal call there delays other agents; the lock waits at most 60 s, then fails with "busy, retry".
 * **Context is personal data.** `context` (up to 2000 characters of whatever the agent read) is stored in the ledger and shown on the dashboard, and with the optional AI reviewer it is sent to Anthropic through the Claude CLI. There is no retention setting or redaction yet, and the dashboard records the approver only as `human:dashboard`.
 * **One machine only.** The budget check and the write are serialised by an OS file lock (`<db>.lock`) shared by the MCP server and the dashboard; 8 processes racing for a 100.00 cap now get exactly 5 orders (`tests/test_concurrency_states.py`, which also reproduces the old overspend). The lock does not work across machines or network file systems: that needs Postgres row locks.
 * **The audit chain is tamper-evident, not tamper-proof.** Each audit row carries a hash of its payment's whole row (every column except the volatile `updated` timestamp), so editing, deleting or smuggling in a payment is caught (`python -m agentpurse.audit`). Someone with write access can still rebuild everything; `--expect-head <seq:hash>` (a head you published earlier) catches deleted newest rows.
@@ -124,3 +123,5 @@ Copy `policy.example.json` to start; `docs/` has the rest: [SUBMISSION.md](docs/
 * PayPal Orders needs the payer to approve each order, so "auto-approve" means the agent may open the checkout itself, not that money moves without the payer.
 * Sandbox only by design. `demo.py` uses a scripted stand-in for the LLM so it is reproducible; the real-Claude evidence is [docs/LIVE_RUN.md](docs/LIVE_RUN.md) (mock PayPal; two shell-bridge runs and two native `claude -p` MCP runs, one with the AI reviewer on; one run each, one model).
 * SQLite single-node; see [docs/RISKS.md](docs/RISKS.md) for what that means and what would come next.
+
+Tests: 186, see [docs/TESTS.md](docs/TESTS.md). CI runs them on Python 3.9 and 3.12.

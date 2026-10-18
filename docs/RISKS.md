@@ -29,7 +29,7 @@
 * The Devpost page returned 403 to the fetch tool, and the only PayPal-hackathon winners post I could find (Dev Days 2025) gives almost no judge commentary, so the "why they won" column in ROLE_MODELS.md is labelled inference.
 
 ## Hygiene (checked before the PR)
-No keys, `.env` or `*.db` in the tree (`.gitignore` covers them). No personal name or contact data in the files. **Not clean: the history contains one GitHub web-UI merge commit (`fa3112b`, the PR #1 merge) whose author field is a personal Gmail address.** Removing it needs a history rewrite and a force-push of the public `main`, which the owner has to decide; every other commit uses the noreply identity. No billable action was taken; sandbox keys were never used.
+No keys, `.env` or `*.db` in the tree (`.gitignore` covers them). No personal name or contact data in the files or in the commit author fields: the one commit that carried a personal address (the web-UI merge of PR #1) was removed by a history rewrite on 2026-10-18 and `origin/main` and `refs/pull/1/head` now carry only the noreply identity. GitHub may still resolve the old SHA by direct URL until its caches expire; asking GitHub Support to purge it is optional. No billable action was taken; sandbox keys were never used.
 
 ## Added after review round 1 (see REVIEW_R1.md)
 | # | Risk | Status |
@@ -48,4 +48,13 @@ No keys, `.env` or `*.db` in the tree (`.gitignore` covers them). No personal na
 | R25 | **Audit hash covered only money columns.** | **Fixed**: whole row except `updated`; one test per column. State change + audit row now commit in one transaction. |
 | R26 | Budget window anchored on request time; human-approved late = counted early; crashed AUTO_APPROVED / ORDER_UNKNOWN rows immortal; human approval blocked by the request-rate rule; lock without timeout. | **Fixed** (see tests/test_round2.py). |
 | R27 | PII in `context`, no retention, no approver identity, head hash not published automatically. | Open (stated in README Limits). The audit CLI prints the head hash and the MCP server prints it at start. |
-| R28 | Git history contains one web-UI merge commit with a personal Gmail as author. | Open: needs the owner's decision (history rewrite + force-push of the public main). |
+| R28 | Git history contained one web-UI merge commit with a personal Gmail as author. | **Resolved (2026-10-18 history rewrite).** Old SHA may still resolve on GitHub until purged (optional support request). |
+
+## Added after review round 3 (see REVIEW_R3.md)
+| # | Risk | Status |
+|---|---|---|
+| R29 | **Orders v2 pays the credential owner**, so a buyer-side agent could not pay third parties. | **Addressed**: Payouts API path for `method: "payout"` payees (no payer click, lower auto-approve limit 10.00, same policy/human/audit gates), implemented and tested offline; Checkout is documented as "your own merchant account". Open: neither has run on the live sandbox (`live/sandbox_run.py` is ready); Payouts must be enabled for the sandbox app; unclaimed payouts stay pending up to 30 days. |
+| R30 | **Lock held across PayPal HTTP.** | **Reduced**: `propose_payment` reserves spend (AUTO_APPROVED counts) and calls PayPal without the lock. Capture and human approval still hold it. |
+| R31 | Injection scan misses spaced-out letters and other languages. | Open, now measured: `tests/test_payouts_heuristics.py::test_known_misses_stay_measured`. Added language-neutral signals (amount never mentioned, mixed-script words) and BEC phrasing. |
+| R32 | Approver identity was the constant `human:dashboard`. | **Fixed**: `--approver` / `AGENTPURSE_APPROVER` / OS user is recorded. |
+| R33 | `context` retention / redaction. | Open (README Limits). |

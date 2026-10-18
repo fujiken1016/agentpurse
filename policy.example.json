@@ -9,10 +9,43 @@
   "duplicate_window_seconds": 600,
   "pending_ttl_seconds": 86400,
   "allowed_payees": {
-    "acme-api": {"name": "Acme Data API", "categories": ["api", "data"], "max_amount": "30.00", "daily_cap": "60.00", "max_payments_per_day": 5},
-    "docs-pub": {"name": "Docs Publisher", "categories": ["subscription", "content"]}
+    "acme-api": {
+      "name": "Acme Data API",
+      "categories": [
+        "api",
+        "data"
+      ],
+      "max_amount": "30.00",
+      "daily_cap": "60.00",
+      "max_payments_per_day": 5
+    },
+    "docs-pub": {
+      "name": "Docs Publisher",
+      "categories": [
+        "subscription",
+        "content"
+      ]
+    },
+    "design-co": {
+      "name": "Design Co",
+      "categories": [
+        "design"
+      ],
+      "method": "payout",
+      "paypal_email": "design-co@example.com",
+      "max_amount": "30.00",
+      "daily_cap": "60.00"
+    }
   },
   "blocked_payees": [],
-  "blocked_categories": ["gift_card", "crypto", "gambling", "adult"],
-  "human_review_categories": ["subscription"]
+  "blocked_categories": [
+    "gift_card",
+    "crypto",
+    "gambling",
+    "adult"
+  ],
+  "human_review_categories": [
+    "subscription"
+  ],
+  "payout_auto_approve_up_to": "10.00"
 }

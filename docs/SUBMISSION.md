@@ -27,7 +27,7 @@ audit log that detects after-the-fact edits.
 Python standard library only: a JSON-RPC 2.0 MCP server over stdio, a pure-function policy engine, a SQLite ledger with a
 hash-chained audit table, a PayPal Orders v2 client with an exact-host sandbox guard, and a phone-friendly approval dashboard
 protected against cross-site requests. The same code runs against an offline PayPal mock, or the sandbox when two
-environment variables are set (not yet run against the live sandbox: no keys at the time of writing). 167 automated tests, including the PayPal client against a fake transport and a real MCP subprocess.
+environment variables are set (not yet run against the live sandbox: no keys at the time of writing). 186 automated tests, including the PayPal client against a fake transport and a real MCP subprocess.
 
 ## How AI is used
 1. **A real Claude is the buyer.** It reads the job and supplier emails, chooses what to buy, calls the MCP tools and reacts to the answers.
@@ -39,7 +39,7 @@ environment variables are set (not yet run against the live sandbox: no keys at 
    and model-readable denial reasons help the agent correct itself instead of retrying blindly.
 
 ## PayPal technology used
-PayPal REST Orders v2 (create with `payment_source.paypal`, `PAY_NOW`; capture), OAuth2 client-credentials with refresh on 401,
+PayPal Payouts API (the agent pays an allow-listed PayPal account with no payer click, small amounts only) and REST Orders v2 (create with `payment_source.paypal`, `PAY_NOW`; capture; for purchases on the owner's own merchant account), OAuth2 client-credentials with refresh on 401,
 `PayPal-Request-Id` idempotency, sandbox environment. Designed around PayPal's consent model: money moves only after the payer
 approves on PayPal. Not yet exercised against the live sandbox.
 
@@ -61,7 +61,7 @@ Webhook reconciliation (PayPal events vs ledger), Postgres with spend reservatio
 Payouts for agent-to-agent settlement, PYUSD.
 
 ## Built with
-python, mcp, paypal-rest-api, sqlite, claude
+python, mcp, paypal-orders-v2, paypal-payouts, sqlite, claude
 
 ## Try it
 Repo: https://github.com/fujiken1016/agentpurse (MIT). `python3 demo.py` then `python3 -m agentpurse.dashboard`. No keys needed.

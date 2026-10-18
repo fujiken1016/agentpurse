@@ -61,7 +61,7 @@ class Dash(unittest.TestCase):
         code, out = self.call("POST", "/api/reject", {"payment_id": b}, self.J)
         self.assertEqual(json.loads(out)["status"], "REJECTED")
         row = [x for x in self.svc.ledger.audit_rows(a) if x["event"] == "human_approved"][0]
-        self.assertEqual(row["actor"], "human:dashboard")
+        self.assertEqual(row["actor"], "human:dashboard:local")
         self.assertIn("ok by me", row["detail"])
 
     def test_bad_json_and_oversize(self):

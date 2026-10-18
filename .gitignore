@@ -4,3 +4,17 @@ __pycache__/
 *.pyc
 *.lock
 live/run_*/raw_*
+# video work area: sources are tracked, bulky/derived files are not (the final video is referenced by its YouTube URL)
+video/frames/
+video/work/
+video/probe/
+video/aud/
+video/chk/
+video/out/
+video/node_modules
+video/*.wav
+video/*.mp4
+video/*.png
+video/*.log
+video/*.db
+video/*.lock

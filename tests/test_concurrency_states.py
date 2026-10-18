@@ -17,8 +17,8 @@ db, i, xl = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
 pol = dict(P.DEFAULT_POLICY, max_payments_per_hour=50, max_payments_per_day=50, allowed_payees={"acme-api": {"name": "Acme", "categories": ["api"]}})
 svc = AgentPurse(MockPayPal(db), Ledger(db), pol, cross_process_lock=xl)
 import time
-orig = svc.pp.create_order
-svc.pp.create_order = lambda *a, **k: (time.sleep(0.4), orig(*a, **k))[1]   # a realistic PayPal round trip widens the race window
+orig = svc._record
+svc._record = lambda *a, **k: (time.sleep(0.4), orig(*a, **k))[1]   # widens the check-then-act window (spend is reserved at _record)
 print(json.dumps(svc.propose({"amount": "20.00", "payee_id": "acme-api", "category": "api", "description": "job " + i,
                               "agent_id": "agent-" + i})))
 ''' % ROOT

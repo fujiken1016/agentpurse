@@ -7,6 +7,7 @@ State machine (every arrow writes an audit row that also carries a hash of the p
   ORDER_UNKNOWN  -> (payment_status retries with the same PayPal-Request-Id) ORDER_CREATED | FAILED
   ORDER_CREATED  -> (payer approves on PayPal, agent calls capture) CAPTURED | CAPTURE_PENDING | CANCELLED | EXPIRED
   CAPTURE_PENDING -> (payment_status asks PayPal) CAPTURED | FAILED
+  Payout payees (policy method "payout"): AUTO_APPROVED / approved -> PAID | PAYOUT_PENDING -> PAID | FAILED  (no payer click, no capture)
 Concurrency: every state-changing section runs under one lock that is a thread lock AND an OS file lock next to the
 SQLite file, so the MCP server and the dashboard (separate processes) cannot both pass the same budget check.
 """
@@ -166,8 +167,8 @@ class AgentPurse:
                 return {"payment_id": pid, "status": "PENDING_HUMAN", **d.to_dict(),
                         "expires_in_seconds": self.policy["pending_ttl_seconds"],
                         "next": "A human must approve this in the AgentPurse dashboard. Poll payment_status; do not re-propose."}
-            self._record(r, "AUTO_APPROVED", d, pid)  # AUTO_APPROVED rows are written under the lock, then the order is opened under it too
-            return self._open_order(pid, d.to_dict(), actor="policy")
+            self._record(r, "AUTO_APPROVED", d, pid)  # counts as spent from here (a reservation): the lock is released before PayPal is called
+        return self._open_order(pid, d.to_dict(), actor="policy")
 
     def _advice(self, r):
         """Ask the optional AI reviewer, outside the lock and cached per request. Returns None (not asked),
@@ -213,22 +214,39 @@ class AgentPurse:
         return pid
 
     def _open_order(self, pid, decision, actor):
+        """Move money for an approved payment. The PayPal call itself is made WITHOUT the service lock (the row is already
+        reserved as AUTO_APPROVED / PENDING_HUMAN-approved); every ledger write takes the lock and is a compare-and-swap."""
         p = self.ledger.get(pid)
+        payee = self.policy["allowed_payees"].get(p["payee_id"], {})
+        payout = payee.get("method") == "payout"
         try:
-            email = self.policy["allowed_payees"].get(p["payee_id"], {}).get("paypal_email")
-            o = self.pp.create_order(pid, p["amount"], p["currency"], p["description"] or "AgentPurse payment", payee_email=email)
-        except PayPalUnknown as e:  # PayPal may have created the order: keep the budget reserved, retry with the same request id
-            with self.ledger.atomic():
+            if payout:
+                o = self.pp.create_payout(pid, p["amount"], p["currency"], p["description"] or "AgentPurse payment", payee["paypal_email"])
+            else:
+                o = self.pp.create_order(pid, p["amount"], p["currency"], p["description"] or "AgentPurse payment",
+                                         payee_email=payee.get("paypal_email"))
+        except PayPalUnknown as e:  # PayPal may have acted: keep the budget reserved, retry with the same request id
+            with self._lock, self.ledger.atomic():
                 self.ledger.update(pid, only_if_status=p["status"], status="ORDER_UNKNOWN")
                 self.ledger.log("order_unknown", pid, actor, {"error": str(e)[:300]})
             return {"payment_id": pid, "status": "ORDER_UNKNOWN",
                     "next": "PayPal did not answer. Call payment_status to retry safely (same PayPal-Request-Id); do not re-propose."}
         except PayPalError as e:
-            with self.ledger.atomic():
+            with self._lock, self.ledger.atomic():
                 self.ledger.update(pid, status="FAILED")
                 self.ledger.log("order_failed", pid, actor, {"error": str(e)[:300]})
             return {"payment_id": pid, "status": "FAILED", "error": str(e)}
-        with self.ledger.atomic():
+        if payout:
+            new = "PAID" if o["status"] == "SUCCESS" else "PAYOUT_PENDING"
+            with self._lock, self.ledger.atomic():
+                if not self.ledger.update(pid, only_if_status=p["status"], status=new, order_id=o["payout_id"]):
+                    self.ledger.log("payout_orphaned", pid, actor, {"payout_id": o["payout_id"], "was": p["status"]})
+                    return {"payment_id": pid, "status": "CANCELLED", "error": "payment changed state while the payout was sent; check payment_status and PayPal"}
+                self.ledger.log("payout_sent", pid, actor, {"payout_id": o["payout_id"], "batch_status": o["status"], "mode": self.pp.mode})
+            return {"payment_id": pid, "status": new, **decision, "payout_id": o["payout_id"],
+                    "next": "Paid directly to the allow-listed PayPal account; nothing more to do." if new == "PAID"
+                            else "PayPal is still processing the payout; poll payment_status."}
+        with self._lock, self.ledger.atomic():
             if not self.ledger.update(pid, only_if_status=p["status"], status="ORDER_CREATED", order_id=o["order_id"],
                                       approve_url=o["approve_url"]):  # cancelled/changed by another process meanwhile
                 self.ledger.log("order_orphaned", pid, actor, {"order_id": o["order_id"], "was": p["status"]})
@@ -242,6 +260,20 @@ class AgentPurse:
         pid = p["id"]
         if p["status"] == "ORDER_UNKNOWN":
             self._open_order(pid, json.loads(p["decision"] or "{}"), actor="reconcile")
+        elif p["status"] == "PAYOUT_PENDING":
+            try:
+                g = self.pp.get_payout(p["order_id"])
+            except PayPalError:
+                return
+            st = g.get("item_status") or g.get("status")
+            if st == "SUCCESS":
+                with self.ledger.atomic():
+                    if self.ledger.update(pid, only_if_status="PAYOUT_PENDING", status="PAID"):
+                        self.ledger.log("payout_paid", pid, "reconcile", {"payout_id": p["order_id"]})
+            elif st in ("FAILED", "DENIED", "RETURNED", "BLOCKED", "REFUNDED", "CANCELED", "REVERSED"):
+                with self.ledger.atomic():
+                    if self.ledger.update(pid, only_if_status="PAYOUT_PENDING", status="FAILED"):
+                        self.ledger.log("payout_failed", pid, "reconcile", {"paypal_status": st})
         elif p["status"] == "CAPTURE_UNKNOWN":
             try:
                 o = self.pp.get_order(p["order_id"])
@@ -278,7 +310,7 @@ class AgentPurse:
             p = self.ledger.get(pid)
             if not p:
                 return {"error": "unknown payment_id"}
-            if p["status"] in ("ORDER_UNKNOWN", "CAPTURE_PENDING", "CAPTURE_UNKNOWN"):
+            if p["status"] in ("ORDER_UNKNOWN", "CAPTURE_PENDING", "CAPTURE_UNKNOWN", "PAYOUT_PENDING"):
                 self._reconcile(p)
                 p = self.ledger.get(pid)
             out = {k: p[k] for k in ("id", "status", "amount", "currency", "payee_id", "category", "order_id",
@@ -288,6 +320,8 @@ class AgentPurse:
                 out["next"] = "waiting for a human in the dashboard"
             elif p["status"] == "CAPTURE_PENDING":
                 out["next"] = "PayPal accepted the capture but it is not final yet; poll payment_status"
+            elif p["status"] == "PAYOUT_PENDING":
+                out["next"] = "PayPal is still processing the payout; poll payment_status"
             elif p["status"] == "CAPTURE_UNKNOWN":
                 out["next"] = "PayPal did not confirm the capture; poll payment_status, do not capture again"
             elif p["status"] == "ORDER_UNKNOWN":

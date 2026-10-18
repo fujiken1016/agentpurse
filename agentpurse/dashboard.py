@@ -7,7 +7,7 @@ Hardening (this page can approve spending, so it is not an open localhost endpoi
   * POST bodies must be application/json
 """
 from __future__ import annotations
-import argparse, hmac, json, secrets
+import argparse, getpass, hmac, json, os, secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from . import paypal, policy as P
@@ -17,7 +17,7 @@ from .service import AgentPurse
 HTML = (Path(__file__).parent / "dashboard.html").read_text(encoding="utf-8")
 
 
-def make_handler(svc, token, port):
+def make_handler(svc, token, port, approver="local"):
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
 
     class H(BaseHTTPRequestHandler):
@@ -81,9 +81,9 @@ def make_handler(svc, token, port):
             except (ValueError, AttributeError):
                 return self._send(400, '{"error":"bad json"}')
             if self.path == "/api/approve":
-                return self._send(200, json.dumps(svc.human_decide(pid, True, "human:dashboard", note)))
+                return self._send(200, json.dumps(svc.human_decide(pid, True, f"human:dashboard:{approver}", note)))
             if self.path == "/api/reject":
-                return self._send(200, json.dumps(svc.human_decide(pid, False, "human:dashboard", note)))
+                return self._send(200, json.dumps(svc.human_decide(pid, False, f"human:dashboard:{approver}", note)))
             if self.path == "/api/mock_payer_approve" and svc.pp.mode == "mock":
                 p = svc.ledger.get(pid)
                 if p and p["order_id"]:
@@ -105,11 +105,13 @@ def main():
     ap.add_argument("--policy")
     ap.add_argument("--db", default="agentpurse.db")
     ap.add_argument("--port", type=int, default=8787)
+    ap.add_argument("--approver", default=os.environ.get("AGENTPURSE_APPROVER") or getpass.getuser(),
+                    help="name recorded in the audit log for approvals made in this dashboard (default: OS user)")
     a = ap.parse_args()
     svc = AgentPurse(paypal.from_env(a.db), Ledger(a.db), P.load_policy(a.policy))
     token = secrets.token_urlsafe(24)
     print(f"AgentPurse dashboard: http://127.0.0.1:{a.port}  (PayPal mode: {svc.pp.mode})")
-    ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(svc, token, a.port)).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(svc, token, a.port, "".join(c for c in a.approver if c.isalnum() or c in "-_.@")[:40] or "local")).serve_forever()
 
 
 if __name__ == "__main__":

@@ -44,4 +44,4 @@ Done: `_XLock` leak, dashboard bad `Content-Length` and unknown-order mock appro
 Not done: Windows is thread-lock only; rate-limit denials still create rows; `verify_audit` runs over the whole table per poll; `-m unittest tests.x` needs `discover -s tests`; SUBMISSION still has the YouTube placeholder; ResourceWarnings in two live-driver tests.
 
 ## What a third review should look at
-The lock is held while talking to PayPal; the reviewer and the native `claude -p` run have never executed; per-order payer approval and payee semantics limit the product story.
+(Updated 2026-10-18 after round 3: the reviewer and the native `claude -p` run have since executed, the lock is no longer held during `propose_payment`'s PayPal call, and the Payouts path addresses the payee semantics. Remaining: no live sandbox run yet.)
