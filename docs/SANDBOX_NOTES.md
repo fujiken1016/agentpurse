@@ -12,3 +12,6 @@ After the payer approves, PayPal redirects to `PAYPAL_RETURN_URL`. The default w
 
 ## Video material
 `python3 live/sandbox_evidence.py` renders `docs/sandbox_evidence.png` (1920x1080) from live API responses: order, capture, payout batch, audit status. Only ids, amounts, fees, statuses and timestamps are rendered; no names, emails or addresses. The PayPal checkout login page is `docs/sandbox-checkout-login.jpg`.
+
+## Claude-driven payout (added later the same day)
+`python3 live/live_claude.py --scenario c --sandbox` let a real Claude (`claude -p`) pay 2.00 USD to the sandbox payee through AgentPurse: payout batch `JTWGTV379RDL8`, no human step, `SUCCESS` per the PayPal API after about two minutes. Full log: [LIVE_RUN.md](LIVE_RUN.md). Screen: `docs/sandbox_evidence.png` now has a card for it.

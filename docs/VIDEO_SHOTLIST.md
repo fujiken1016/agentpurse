@@ -16,8 +16,20 @@ Honesty captions: scenes marked SCRIPTED say "scripted attacker (demo.py)" on sc
 | 7 | 2:00-2:30 | Approve on the phone, payer approves (mock; sandbox page if keys), Claude lists and captures both orders (phase 2 of run A); a second capture is refused. Pre-typed commands, cut on results | "Limits are re-checked at approval. Captured once." |
 | 7b | (after sandbox run) | **Real sandbox clip** from `python3 live/sandbox_run.py`: the payout batch id and the PayPal sandbox checkout page with the order id on screen, then capture. Replaces the mock labels in scenes 3 and 7; cut the architecture slide to 6 s to pay for it | "Same code, real PayPal sandbox: a payout with no click, a checkout the payer approves." |
 | 8 | 2:30-2:42 | Edit one audit row with a prepared one-liner, run `python -m agentpurse.audit`: `BROKEN at seq N` (or `payments vs chain: MISMATCH` for an edited payment) | "Edit history and it shows." |
-| 9 | 2:42-2:52 | `python3 -m unittest` -> `Ran 186 tests ... OK`; end card: repo URL, "no keys, 30 seconds" | "Standard library only, 186 tests, PayPal Orders v2. AgentPurse: spend limits you can audit." |
+| 9 | 2:42-2:52 | `python3 -m unittest` -> `Ran 189 tests ... OK`; end card: repo URL, "no keys, 30 seconds" | "Standard library only, 189 tests, PayPal Orders v2. AgentPurse: spend limits you can audit." |
 
 Real-log facts to keep honest on screen: tool calls take several seconds each (so 4x with a visible clock); in run A Claude used `simulate_payment` rather than a real proposal for the gift card, so the audit shows no DENIED row for it; in run B the policy alone would have approved, the AI reviewer is what escalated it; PayPal is the mock until `docs/SANDBOX_RUN.md` exists; the final video is referenced by its YouTube URL, never committed.
 
 Capture checklist: split screen at 1080p; terminal font 18pt+; a Claude Code session (or the live/ bridge) visible; no real keys on screen; export burned-in captions, upload Public and check from a logged-out window.
+
+## Asset paths for the video editor (all in this repo; no secrets, names or emails in any of them)
+| Need | File | Notes |
+|---|---|---|
+| PayPal checkout / approval screen (buyer login page, real sandbox, order `4K665048T1086350S`) | `docs/sandbox-checkout-login.jpg` | The consent page itself needs the buyer's login: if you want it, the sandbox buyer must approve a fresh order (`python3 live/sandbox_run.py --fresh --wait-payer 900`) while you screen-record; the return page is `https://fujiken1016.github.io/agentpurse/thanks.html` |
+| Real sandbox transaction record: order COMPLETED, capture `2GH98453S0593001M` (12.00 USD, fee 0.73, net 11.27), Payouts batch `M66X8A3C4HAFC` SUCCESS 5.00 USD, Claude's payout card, audit OK | `docs/sandbox_evidence.png` (1920x1080), source `docs/sandbox_evidence.html`, regenerate with `python3 live/sandbox_evidence.py --claude-payout JTWGTV379RDL8` | Fetched from the PayPal API, not typed |
+| Claude pays on the sandbox by itself (no human step), 2.00 USD, payout `JTWGTV379RDL8`, SUCCESS about 2 minutes later | `live/run_c_native/transcript.md` (full generated log), tool calls: `check_budget` (paypal_mode sandbox) -> `propose_payment` -> `payment_status` x2 | Real time is about 40 s for the calls; show at 4x with the clock, then cut to the evidence card |
+| Real Claude, mock PayPal (checkout, human approval, injected email + AI reviewer) | `live/run_a_native/transcript.md`, `live/run_b_native/transcript.md` | Scenes 3 to 5 |
+| Full sandbox run record | `docs/SANDBOX_RUN.md` (+ `docs/SANDBOX_NOTES.md`: INSUFFICIENT_FUNDS lesson) | |
+| Dashboard approval on a phone (injected phrase highlighted) | `docs/dashboard-approval-375px.jpg` | |
+| Test count to show on screen | **189 tests** (`python3 -m unittest discover -s tests`; CI on Python 3.9 and 3.12) | Older cuts say 167 or 186: replace |
+| Scenario scripts | `live/live_claude.py --scenario a|b|c`, `live/sandbox_run.py`, `demo.py` | |

@@ -15,6 +15,7 @@ CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 
 def main():
+    claude_payout = sys.argv[sys.argv.index("--claude-payout") + 1] if "--claude-payout" in sys.argv else None
     env = load_env(DEFAULT_ENV)
     os.environ.update({k: v for k, v in env.items() if k.startswith("PAYPAL_")})
     pp = paypal.from_env()
@@ -31,6 +32,10 @@ def main():
     b = pp._call("GET", f"/v1/payments/payouts/{pay['order_id']}")
     bh, it = b.get("batch_header", {}), (b.get("items") or [{}])[0]
     br = c.get("seller_receivable_breakdown", {})
+    cb = ci = {}
+    if claude_payout:
+        cr = pp._call("GET", f"/v1/payments/payouts/{claude_payout}")
+        cb, ci = cr.get("batch_header", {}), (cr.get("items") or [{}])[0]
     esc = html.escape
 
     def money(m):
@@ -44,6 +49,8 @@ def main():
         ("Payout (agent paid an allow-listed account, no click)", [("Batch id", bh.get("payout_batch_id")), ("Batch status", bh.get("batch_status")),
             ("Item status", it.get("transaction_status")), ("Amount", money(it.get("payout_item", {}).get("amount"))),
             ("Sender batch id (= our payment id)", bh.get("sender_batch_header", {}).get("sender_batch_id"))]),
+        *([("Payout made by Claude itself (claude -p over MCP, 2.00 USD)", [("Batch id", cb.get("payout_batch_id")), ("Batch status", cb.get("batch_status")),
+            ("Item status", ci.get("transaction_status")), ("Amount", money(ci.get("payout_item", {}).get("amount")))])] if claude_payout else []),
         ("AgentPurse audit", [("Hash chain", "OK" if led.verify_audit()[0] else "BROKEN"), ("Payments vs chain", "OK" if not led.verify_ledger() else "MISMATCH"),
             ("Head", f"{seq}:{h[:24]}...")]),
     ]

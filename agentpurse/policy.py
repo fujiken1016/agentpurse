@@ -194,6 +194,20 @@ def _norm(t) -> str:
     return unicodedata.normalize("NFKC", HIDDEN_CHARS.sub("", t)).translate(_CONFUSABLE)
 
 
+# The same phrases with every non-letter removed: catches "i g n o r e   p r e v i o u s", dotted, dashed or zero-width-padded text.
+SQUASHED_PHRASES = ["ignorepreviousinstruction", "ignorepriorinstruction", "ignoreallpreviousinstruction", "ignoreallinstruction",
+                    "ignoreeverythingabove", "disregardpreviousinstruction", "disregardthebudget", "systemoverride", "donottelltheuser",
+                    "donotinformtheuser", "bypasstheapproval", "overridethepolicy"]
+# Other languages (the same few intents): ignore instructions / do not tell the user / system override.
+MULTILINGUAL = [
+    r"ignora (todas )?(las )?instrucciones (anteriores|previas)", r"no (le )?(digas|informes) (nada )?al usuario",
+    r"ignore[zs]? (toutes )?(les )?instructions (pr[eé]c[eé]dentes|ant[eé]rieures)", r"ne (le )?dis (rien )?(pas )?[àa] l'utilisateur",
+    r"ignoriere (alle )?(vorherigen|bisherigen|obigen) (anweisungen|instruktionen)", r"sag(e)? (es )?dem (benutzer|nutzer) nicht",
+    r"ignor[ae] (todas )?as instru[cç][õo]es (anteriores|pr[eé]vias)", r"ignora (tutte )?le istruzioni precedenti",
+    r"以前の(指示|命令)を無視", r"(上記|これまで)の(指示|命令)を(すべて)?(無視|破棄)", r"ユーザーには(言|伝え)(わ|る)?ないで", r"忽略(之前|以上|先前)的?(所有)?(指令|指示)",
+]
+
+
 def find_injection(*texts) -> list:
     """Return the matched snippets (so a human can see exactly what the agent was told)."""
     hits = []
@@ -205,6 +219,14 @@ def find_injection(*texts) -> list:
             m = re.search(pat, s, re.I | re.S)
             if m:
                 hits.append(m.group(0)[:120])
+        for pat in MULTILINGUAL:
+            m = re.search(pat, s, re.I | re.S)
+            if m:
+                hits.append(m.group(0)[:120])
+        squashed = re.sub(r"[^a-z]", "", s.lower())
+        for ph in SQUASHED_PHRASES:
+            if ph in squashed and not any(ph in re.sub(r"[^a-z]", "", h.lower()) for h in hits):
+                hits.append("spaced-out text: " + ph)
     return hits
 
 

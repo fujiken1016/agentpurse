@@ -3,9 +3,7 @@ V={
 "hook":[("A web page told an AI agent to pay forty-five dollars to a stranger.","A web page told an AI agent to pay $45 to a stranger."),
         ("AgentPurse said no. PayPal was never called.","AgentPurse said no. PayPal was never called.")],
 "arch":[("AgentPurse sits between an AI agent and PayPal.","AgentPurse sits between an AI agent and PayPal."),
-        ("The agent can only propose a payment, over M C P.","The agent can only propose a payment, over MCP."),
-        ("Plain rules decide: pay, ask a human, or deny.","Plain rules decide: pay, ask a human, or deny."),
-        ("Every decision lands in a tamper-evident log.","Every decision lands in a tamper-evident log.")],
+        ("The agent only proposes. Plain rules decide, and every decision is logged.","The agent only proposes. Plain rules decide; every decision is logged.")],
 "a1":[("This is a real Claude, running live through M C P.","This is a real Claude, running live through MCP."),
       ("It checks the budget, then proposes twelve dollars to an allowed supplier.","It checks the budget, then proposes $12 to an allowed supplier."),
       ("Approved. A mock PayPal order opens. No sandbox keys yet.","Approved: a mock PayPal order opens. No keys yet."),
@@ -22,10 +20,13 @@ V={
 "d":[("A person approves. The limits are checked again.","A person approves. The limits are checked again."),
      ("Then Claude captures both orders.","Then Claude captures both orders."),
      ("Each payment settles once. A second capture is refused.","Each payment settles once. A second capture is refused.")],
+"sbx":[("Then the same flow on the real PayPal sandbox.","Then the same flow on the real PayPal sandbox."),
+       ("The payer approves on PayPal. We capture twelve dollars, once.","The payer approves on PayPal. We capture $12, once."),
+       ("The agent also pays five dollars to an allow-listed account. The audit chain is intact.","The agent also pays $5 to an allow-listed account. Audit chain: intact.")],
 "e":[("Every decision is hash-chained.","Every decision is hash-chained."),
      ("Edit one row, and the chain breaks right there.","Edit one row, and the chain breaks right there.")],
 "f":[("Standard library only. One hundred sixty-seven tests, all passing.","Standard library only. 167 tests, all passing.")],
 "end":[("AgentPurse. Spend limits you can audit.","AgentPurse. Spend limits you can audit."),
        ("Open source. No keys needed. Thirty seconds to run.","Open source. No keys needed. 30 seconds to run.")],
 }
-ORDER=["hook","arch","a1","b","c","d","e","f","end"]
+ORDER=["hook","arch","a1","b","c","d","sbx","e","f","end"]

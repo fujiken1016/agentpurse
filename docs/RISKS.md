@@ -3,7 +3,8 @@
 "Status" says whether each item is fixed, mitigated, or open.
 
 ## Submission facts that are still open
-* The PayPal client ran against the live sandbox on 2026-10-18 (docs/SANDBOX_RUN.md): no shape mismatches. Still to do: record the sandbox clip for the video (material: docs/sandbox_evidence.png).
+* The PayPal client ran against the live sandbox on 2026-10-18 (docs/SANDBOX_RUN.md): no shape mismatches; a real Claude paid a Payout there (docs/LIVE_RUN.md, scenario c). The video uses material from docs/sandbox_evidence.png and docs/sandbox-checkout-login.jpg.
+* The demo video must be uploaded public to YouTube and its URL pasted into docs/SUBMISSION.md (still a placeholder), then checked from a logged-out window.
 * The Devpost page could not be fetched by the tooling used to prepare this repo (HTTP 403): criteria and dates in ROLE_MODELS.md come from secondary sources and must be checked on the official page before submitting.
 * No hosted demo: the dashboard binds to 127.0.0.1 and would need real authentication before any hosting.
 
@@ -55,6 +56,14 @@ No keys, `.env` or `*.db` in the tree (`.gitignore` covers them). No personal na
 |---|---|---|
 | R29 | **Orders v2 pays the credential owner**, so a buyer-side agent could not pay third parties. | **Addressed**: Payouts API path for `method: "payout"` payees (no payer click, lower auto-approve limit 10.00, same policy/human/audit gates), implemented and tested offline; Checkout is documented as "your own merchant account". Both ran on the live sandbox (2026-10-18). Payouts must be enabled for the sandbox app; unclaimed payouts stay pending up to 30 days. |
 | R30 | **Lock held across PayPal HTTP.** | **Reduced**: `propose_payment` reserves spend (AUTO_APPROVED counts) and calls PayPal without the lock. Capture and human approval still hold it. |
-| R31 | Injection scan misses spaced-out letters and other languages. | Open, now measured: `tests/test_payouts_heuristics.py::test_known_misses_stay_measured`. Added language-neutral signals (amount never mentioned, mixed-script words) and BEC phrasing. |
+| R31 | Injection scan misses some wording. | Open, measured. Now caught: spaced-out or dotted letters, Spanish, French, German, Portuguese, Italian, Japanese and Chinese phrasings of the core intents. Still missed (tested as known misses): leetspeak ("1gn0re"), free paraphrase, other languages. The real defences are the allow-list, the caps (payouts: 10.00 auto limit) and the human. |
 | R32 | Approver identity was the constant `human:dashboard`. | **Fixed**: `--approver` / `AGENTPURSE_APPROVER` / OS user is recorded. |
 | R33 | `context` retention / redaction. | Open (README Limits). |
+
+## Added after review round 4 (see REVIEW_R4.md)
+| # | Risk | Status |
+|---|---|---|
+| R34 | **A payout payee's `paypal_email` is trusted policy.** Whoever can edit `policy.json` can redirect money. | Open by design: protect the policy file like a secret; policy is loaded at start and typos refuse to load. A signed or read-only policy is the next step. |
+| R35 | **Payouts cannot be cancelled once SUCCESS.** | Accepted: that is why payouts have the lower auto-approve limit (10.00), per-payee `max_amount` and `daily_cap` (see the `design-co` example in `policy.example.json`), and a human above the limit. |
+| R36 | **The sender balance must be funded.** A fresh sandbox account answered INSUFFICIENT_FUNDS until a checkout was captured (docs/SANDBOX_NOTES.md). Production would need a funding procedure. | Documented. |
+| R37 | **Sandbox payouts settle after seconds to minutes** (PAYOUT_PENDING, then SUCCESS). | Handled: `PAYOUT_PENDING` counts as spent and `payment_status` reconciles. |

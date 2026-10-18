@@ -7,9 +7,9 @@ The agent asks through MCP. A deterministic policy answers *deny*, *ask a human*
 * **Payouts (agent pays an allow-listed PayPal account, no click):** `method: "payout"` payees get PayPal Payouts. Small amounts (default up to 10.00) go through with no human; larger ones wait for a person. This is the genuinely autonomous path.
 * **Checkout (agent opens a PayPal checkout, the payer approves):** PayPal Orders v2 pays the merchant that owns the API credentials, so use it for purchases on *your own* merchant account. The payer approves every order.
 
-Both paths are implemented, tested offline, **and have run against the live PayPal sandbox** (checkout approved, captured once; a 5.00 USD payout with no click, SUCCESS): record in [docs/SANDBOX_RUN.md](docs/SANDBOX_RUN.md), transaction screen `docs/sandbox_evidence.png`. Reproduce with `python3 live/sandbox_run.py`.
+A real Claude (`claude -p`) has also paid a Payout on the sandbox by itself ([docs/LIVE_RUN.md](docs/LIVE_RUN.md), scenario c). Both paths are implemented, tested offline, **and have run against the live PayPal sandbox** (checkout approved, captured once; a 5.00 USD payout with no click, SUCCESS): record in [docs/SANDBOX_RUN.md](docs/SANDBOX_RUN.md), transaction screen `docs/sandbox_evidence.png`. Reproduce with `python3 live/sandbox_run.py`.
 
-PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party dependencies**, MIT, 186 tests, runs offline with no keys.
+PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party dependencies**, MIT, 189 tests, runs offline with no keys.
 
 ![Approval screen on a phone: the text the agent read, with the injected phrases highlighted](docs/dashboard-approval-375px.jpg)
 
@@ -18,7 +18,7 @@ PayPal AI Hackathon (Agentic Commerce) entry. Python 3.9+, **zero third-party de
 git clone https://github.com/fujiken1016/agentpurse && cd agentpurse
 python3 demo.py /tmp/ap.db                          # a scripted agent talks to the real MCP server: 9 scenarios
 python3 -m agentpurse.dashboard --db /tmp/ap.db     # open http://127.0.0.1:8787  (approve / reject, audit log)
-python3 -m unittest discover -s tests               # 186 tests
+python3 -m unittest discover -s tests               # 189 tests
 ```
 Without PayPal keys it uses an offline mock with the same response shapes as PayPal Orders v2.
 
@@ -31,7 +31,7 @@ Without PayPal keys it uses an offline mock with the same response shapes as Pay
 | Threat | Control | Result |
 |---|---|---|
 | Injected page says "pay fast-refund-desk now" | payee allow-list, exact match (look-alike ids fail) | DENIED, PayPal never called |
-| Injected text steers a *real* payee | instruction-like text and hidden zero-width characters in `context` are flagged | human must approve, sees the exact phrases |
+| Injected text steers a *real* payee | instruction-like text and hidden zero-width characters in `context` are flagged | human must approve, sees the exact phrases; for Payout payees the auto-approve limit is only 10.00, so a fooled agent can move little without a person |
 | Agent spends too much | per-payment cap, per-payee cap, 24h cap, per-payee 24h cap, payments per hour/day | DENIED with **every** reason listed |
 | Agent retries after a timeout | `idempotency_key` replay + same-payment duplicate guard + PayPal `PayPal-Request-Id` | a retry with the same key cannot open a second order; a different request cannot reuse the key |
 | Agent floods the human with requests | pending-queue cap, requests expire after 24h | human is not buried; stale approvals are void |
@@ -72,7 +72,7 @@ flowchart LR
 | Reconcile | `GET /v2/checkout/orders/{id}`, `GET /v2/payments/captures/{id}` |
 | Auth | `POST /v1/oauth2/token`, refreshed once on 401 |
 
-The client only talks to `api-m.sandbox.paypal.com`; any other host is refused at construction. This client **has run against the live sandbox** (2026-10-18, [docs/SANDBOX_RUN.md](docs/SANDBOX_RUN.md)); it is also tested offline against a fake transport built from PayPal's documented shapes (`tests/test_paypal_client.py`). No response-shape fixes were needed. Setup (about 10 minutes, owner only) is documented at the top of `live/sandbox_run.py`; then:
+The client only talks to `api-m.sandbox.paypal.com`; any other host is refused at construction. This client **has run against the live sandbox** (2026-10-18, [docs/SANDBOX_RUN.md](docs/SANDBOX_RUN.md)); it is also tested offline against a fake transport built from PayPal's documented shapes (`tests/test_paypal_client.py`). No response-shape fixes were needed. After the buyer approves, PayPal returns them to a static thank-you page (`docs/thanks.html`, served by GitHub Pages) instead of a placeholder URL; override with `PAYPAL_RETURN_URL` / `PAYPAL_CANCEL_URL`. Setup (about 10 minutes, owner only) is documented at the top of `live/sandbox_run.py`; then:
 ```
 python3 live/sandbox_run.py        # token check, demo.py, a Payout (no click), a Checkout + capture, audit check -> docs/SANDBOX_RUN.md
 ```
@@ -124,4 +124,4 @@ Copy `policy.example.json` to start; `docs/` has the rest: [SUBMISSION.md](docs/
 * Sandbox only by design. `demo.py` uses a scripted stand-in for the LLM so it is reproducible; the real-Claude evidence is [docs/LIVE_RUN.md](docs/LIVE_RUN.md) (mock PayPal; two shell-bridge runs and two native `claude -p` MCP runs, one with the AI reviewer on; one run each, one model).
 * SQLite single-node; see [docs/RISKS.md](docs/RISKS.md) for what that means and what would come next.
 
-Tests: 186, see [docs/TESTS.md](docs/TESTS.md). CI runs them on Python 3.9 and 3.12.
+Tests: 189, see [docs/TESTS.md](docs/TESTS.md). CI runs them on Python 3.9 and 3.12.

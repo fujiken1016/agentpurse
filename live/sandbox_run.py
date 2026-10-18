@@ -184,7 +184,7 @@ def main(argv=None):
 
 
 def finish(rep, a):
-    rep.add("\nFindings from the first runs (INSUFFICIENT_FUNDS before the first capture, currency check, return page): see docs/SANDBOX_NOTES.md")
+    rep.add("\nFindings (INSUFFICIENT_FUNDS before the first capture, currency check, return page, the Claude-driven payout): see docs/SANDBOX_NOTES.md and docs/LIVE_RUN.md")
     rep.add("\n**Result: " + ("INCOMPLETE / FAILED, see lines marked FAILED or 'not approved yet'" if rep.failed else "all steps passed") + "**")
     if not a.mock or a.out != os.path.join(ROOT, "docs", "SANDBOX_RUN.md"):
         open(a.out, "w").write("\n".join(rep.lines) + "\n")

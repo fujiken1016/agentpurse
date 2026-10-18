@@ -27,7 +27,7 @@ audit log that detects after-the-fact edits.
 Python standard library only: a JSON-RPC 2.0 MCP server over stdio, a pure-function policy engine, a SQLite ledger with a
 hash-chained audit table, a PayPal Orders v2 client with an exact-host sandbox guard, and a phone-friendly approval dashboard
 protected against cross-site requests. The same code runs against an offline PayPal mock, or the sandbox when two
-environment variables are set (run against the live sandbox on 2026-10-18: checkout captured, payout SUCCESS, see docs/SANDBOX_RUN.md). 186 automated tests, including the PayPal client against a fake transport and a real MCP subprocess.
+environment variables are set (run against the live sandbox on 2026-10-18: checkout captured, payout SUCCESS, see docs/SANDBOX_RUN.md). 189 automated tests, including the PayPal client against a fake transport and a real MCP subprocess.
 
 ## How AI is used
 1. **A real Claude is the buyer.** It reads the job and supplier emails, chooses what to buy, calls the MCP tools and reacts to the answers.
@@ -70,3 +70,4 @@ Video: <YouTube URL, public, under 3 minutes>
 ## Testing instructions for judges
 No account, no keys. Steps are in the README under "Judge click path". With sandbox keys: set `PAYPAL_CLIENT_ID` and
 `PAYPAL_CLIENT_SECRET`; the dashboard then shows "Approve on PayPal" linking to the sandbox checkout.
+To reproduce the sandbox evidence (token, demo, a checkout you approve as the sandbox buyer, capture, a click-free payout, audit check): put `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_SANDBOX_PAYEE_EMAIL` in `~/.config/<you>/paypal_sandbox.env` (path in `live/sandbox_run.py`) and run `python3 live/sandbox_run.py`. After approval PayPal returns the buyer to a static thank-you page on GitHub Pages (`docs/thanks.html`).

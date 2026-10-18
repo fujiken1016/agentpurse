@@ -13,7 +13,8 @@ class SandboxScript(unittest.TestCase):
         out = os.path.join(tempfile.mkdtemp(), "r.md")
         p = run("--mock", "--out", out, "--skip-demo", "--wait-payer", "0")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        t = open(out).read()
+        with open(out) as fh:
+            t = fh.read()
         for s in ("PAID", "CAPTURED", "hash chain OK", "all steps passed"):
             self.assertIn(s, t)
 
@@ -24,7 +25,8 @@ class SandboxScript(unittest.TestCase):
 
     def test_incomplete_env_names_the_missing_variable(self):
         f = os.path.join(tempfile.mkdtemp(), "e.env")
-        open(f, "w").write("PAYPAL_CLIENT_ID=abc\n")
+        with open(f, "w") as fh:
+            fh.write("PAYPAL_CLIENT_ID=abc\n")
         p = run("--env", f)
         self.assertEqual(p.returncode, 1)
         self.assertIn("PAYPAL_CLIENT_SECRET", p.stdout)

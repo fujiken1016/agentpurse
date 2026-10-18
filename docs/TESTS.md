@@ -14,6 +14,7 @@ Run: `python3 -m unittest discover -s tests` (Python 3.9+, no dependencies; CI r
 | Live driver `live/live_claude.py` against a stub CLI | 4 |
 | AI reviewer CLI wrapper (argv, isolation) | 2 |
 | Payouts, reservation outside the lock, new language-neutral signals, sandbox script rehearsal | 19 |
+| Spaced-out / multilingual injection phrases, false-positive guard | 3 |
 | Original suite (wiring, ledger, demo flows) | 20 |
 | Review-round-1 hardening (invisible Unicode, key reuse, cancel loops, compare-and-swap, payee) | 11 |
 | AI reviewer can only escalate (fake advisor) | 9 |

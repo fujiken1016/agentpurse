@@ -17,7 +17,7 @@ import argparse, json, os, shutil, subprocess, sys, tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 KEEP_RAW = [False]
-SCENARIOS = {"a": "TASK.md", "b": "TASK_B.md"}
+SCENARIOS = {"a": "TASK.md", "b": "TASK_B.md", "c": "TASK_C.md"}  # c = Claude pays a Payout payee on the real PayPal sandbox (needs --sandbox)
 
 
 def fail(msg):
@@ -80,6 +80,7 @@ def main(argv=None):
     ap.add_argument("--claude-bin", default=os.environ.get("CLAUDE_CODE_EXECPATH") or shutil.which("claude") or "claude")
     ap.add_argument("--model", default="sonnet")
     ap.add_argument("--scenario", choices=sorted(SCENARIOS), default="a")
+    ap.add_argument("--sandbox", action="store_true", help="use the real PayPal sandbox (keys from ~/.config/fujiken/paypal_sandbox.env); required for scenario c")
     ap.add_argument("--advisor", action="store_true", help="enable the AI reviewer in the MCP server (uses the same CLI login)")
     ap.add_argument("--out", default=None)
     ap.add_argument("--keep-raw", action="store_true", help="also write raw_*.txt and events.jsonl (contain local paths; do not commit)")
@@ -90,8 +91,21 @@ def main(argv=None):
     preflight(a.claude_bin)
     tmp = tempfile.mkdtemp()
     db, cfg, pol = os.path.join(tmp, "live.db"), os.path.join(tmp, "mcp.json"), os.path.join(ROOT, "policy.example.json")
+    sb_env = {}
+    if a.sandbox:
+        from live.sandbox_run import load_env, DEFAULT_ENV
+        e = load_env(DEFAULT_ENV)
+        sb_env = {k: v for k, v in e.items() if k.startswith("PAYPAL_")}
+        if not all(sb_env.get(k) for k in ("PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_SANDBOX_PAYEE_EMAIL")):
+            fail("sandbox keys incomplete in " + DEFAULT_ENV)
+        pj = json.load(open(pol))
+        pj["allowed_payees"]["design-co"]["paypal_email"] = sb_env["PAYPAL_SANDBOX_PAYEE_EMAIL"]
+        pol = os.path.join(tmp, "policy.json")
+        json.dump(pj, open(pol, "w"))
+    elif a.scenario == "c":
+        fail("scenario c pays on the real PayPal sandbox: add --sandbox")
     server = {"command": sys.executable, "args": ["-m", "agentpurse.mcp_server", "--db", db, "--policy", pol], "cwd": ROOT}
-    server["env"] = {"PYTHONPATH": ROOT}  # the CLI does not honour "cwd" for MCP servers: make the package importable explicitly
+    server["env"] = {"PYTHONPATH": ROOT, **{k: v for k, v in sb_env.items() if k != "PAYPAL_SANDBOX_PAYEE_EMAIL"}}  # the CLI does not honour "cwd" for MCP servers: make the package importable explicitly
     if a.advisor:
         server["env"].update({"AGENTPURSE_ADVISOR": "claude-cli", "AGENTPURSE_CLAUDE_BIN": a.claude_bin})
     json.dump({"mcpServers": {"agentpurse": server}}, open(cfg, "w"))
@@ -121,7 +135,15 @@ def main(argv=None):
             a.claude_bin, a.model, cfg,
             "Call list_payments. Capture every payment whose status is ORDER_CREATED, then show audit_trail for one captured "
             "payment and report in 3 lines. Do not propose any new payment.", events, out_dir, "phase2", work_dir)))
-    open(os.path.join(out_dir, "transcript.md"), "w").write("\n".join(md))
+    text = "\n".join(md)
+    import re
+    for sec in [v for k, v in sb_env.items() if "SECRET" in k or k == "PAYPAL_CLIENT_ID"] + [sb_env.get("PAYPAL_SANDBOX_PAYEE_EMAIL", "")]:
+        if sec:
+            text = text.replace(sec, "***")
+    text = re.sub(r"[\w.+-]+@[\w-]+(\.[\w-]+)+", "***@***", text)   # no email address ever lands in a committed transcript
+    if sb_env:  # the temp MCP config held the keys: remove it
+        os.remove(cfg)
+    open(os.path.join(out_dir, "transcript.md"), "w").write(text)
     if a.keep_raw:
         open(os.path.join(out_dir, "events.jsonl"), "w").write("\n".join(json.dumps(e) for e in events))
     print("wrote", out_dir)

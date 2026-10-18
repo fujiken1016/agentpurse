@@ -4,8 +4,8 @@ from lines import V, ORDER
 import scenes as S
 D = json.load(open("dur.json"))
 LEAD, GAP = 0.45, 0.4
-TAIL = {"hook":0.5,"arch":0.8,"a1":0.9,"b":1.0,"c":0.9,"d":1.2,"e":1.0,"f":0.5,"end":3.6}
-MINDUR = {"hook":9.6,"e":12.0,"f":7.4}
+TAIL = {"hook":0.5,"arch":0.8,"a1":0.9,"b":1.0,"c":0.9,"d":1.2,"sbx":1.2,"e":1.0,"f":0.5,"end":3.6}
+MINDUR = {"sbx":12.5,"hook":9.6,"e":12.0,"f":7.4}
 def cues(text, t0, t1):
     words = text.split(); n = len(text)
     def wrap(ws):
