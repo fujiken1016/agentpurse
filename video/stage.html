@@ -113,11 +113,10 @@ function sbx(sc,t){
     h+=`<div style="position:absolute;left:0;top:846px;width:1920px;text-align:center"><span style="background:#0d1117cc;padding:6px 24px;border-radius:12px;font-size:34px;color:#e6edf3">the real PayPal sandbox checkout page (payer sign-in)</span></div>`;
     return h;
   }
-  // zoom regions in 1920x1080 source px: [x,y,w,hgt]
   let R,lab;
   if(t<s[2]-0.15){R=[648,124,624,300];lab='CAPTURED ONCE · 12.00 USD';}
-  else if(t<s[2]+4.1){R=[1270,124,624,300];lab='PAYOUT SUCCESS · 5.00 USD';}
-  else {R=[26,423,624,200];lab='AUDIT CHAIN OK';}
+  else if(t<s[3]-0.15){R=[26,423,624,262];lab="CLAUDE'S PAYOUT · SUCCESS · 2.00 USD";}
+  else {R=[648,423,624,200];lab='AUDIT CHAIN OK';}
   const k=1560/R[2], bw=1560, bh=R[3]*k;
   h+=`<div style="position:absolute;left:180px;top:${112+(700-bh)/2}px;width:${bw}px;height:${bh}px;overflow:hidden;border-radius:22px;border:4px solid #3fb950;background:#f4f5fa"><img src="work/sbx_evidence_hi.png" style="position:absolute;left:${-R[0]*k}px;top:${-R[1]*k}px;width:${1920*k}px;height:${1080*k}px"></div>`;
   h+=`<div style="position:absolute;left:30px;top:848px;height:72px;border-radius:16px;padding:0 34px;font-size:50px;font-weight:800;display:flex;align-items:center;color:#fff;background:#1a7f37">${lab}</div>`;
@@ -128,8 +127,8 @@ function endc(sc,t){
   return `<div style="position:absolute;left:0;top:150px;width:1920px;text-align:center"><div style="font-size:170px;font-weight:900;letter-spacing:-.02em;opacity:${clamp(t/.5)}">AgentPurse</div>
   <div style="font-size:72px;font-weight:700;color:#3fb950;opacity:${o(0)}">Spend limits you can audit.</div>
   <div style="margin-top:54px;font-size:62px;font-weight:700;color:#79c0ff;opacity:${o(1)}">github.com/fujiken1016/agentpurse</div>
-  <div style="margin-top:44px;display:flex;gap:26px;justify-content:center;opacity:${o(1)}">${['Sandbox: capture + payout','167 tests · stdlib only','Mock needs no keys'].map(x=>`<div style="border:3px solid #3a414d;border-radius:16px;padding:14px 28px;font-size:38px;font-weight:700;background:#10151d">${x}</div>`).join('')}</div>
-  <div style="margin-top:46px;font-size:32px;color:#9aa4b0;opacity:${o(1)}">Sandbox = real PayPal API, test money. The Claude scenes above ran on the offline mock.</div></div>`;
+  <div style="margin-top:44px;display:flex;gap:26px;justify-content:center;opacity:${o(1)}">${['Claude paid on sandbox, no click','189 tests · stdlib only','Mock needs no keys'].map(x=>`<div style="border:3px solid #3a414d;border-radius:16px;padding:14px 28px;font-size:38px;font-weight:700;background:#10151d">${x}</div>`).join('')}</div>
+  <div style="margin-top:46px;font-size:32px;color:#9aa4b0;opacity:${o(1)}">Sandbox = real PayPal API, test money. The first Claude scenes ran on the offline mock.</div></div>`;
 }
 window.R=(i,t)=>{
   const sc=DATA.scenes[i]; let h='';

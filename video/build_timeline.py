@@ -4,8 +4,8 @@ from lines import V, ORDER
 import scenes as S
 D = json.load(open("dur.json"))
 LEAD, GAP = 0.45, 0.4
-TAIL = {"hook":0.5,"arch":0.8,"a1":0.9,"b":1.0,"c":0.9,"d":1.2,"sbx":1.2,"e":1.0,"f":0.5,"end":3.6}
-MINDUR = {"sbx":12.5,"hook":9.6,"e":12.0,"f":7.4}
+TAIL = {"hook":0.5,"arch":0.8,"a1":0.9,"b":1.0,"c":0.9,"d":1.2,"sbx":1.2,"c2":1.2,"e":1.0,"f":0.5,"end":3.6}
+MINDUR = {"sbx":11.0,"hook":9.6,"e":12.0,"f":7.4}
 def cues(text, t0, t1):
     words = text.split(); n = len(text)
     def wrap(ws):
@@ -59,7 +59,7 @@ def beats(sc,st,rts):
         B.append(dict(s=round(s,3),e=round(e,3),rt_from=prev,rt_to=rts[i])); prev=rts[i]
     sc["beats"]=B
 def cfg(sc,sid,st):
-    sc["kind"]="term" if sid in("a1","b","c","d","e","f") else sid
+    sc["kind"]="term" if sid in("a1","b","c","c2","d","e","f") else sid
     if sid=="a1":
         sc.update(rt0=0,panel=True,title="REAL RUN  ·  claude -p (Sonnet)",clock=True)
         bl=[dict(t=0.0,kind="cmd",text="$ python3 live/live_claude.py"),
@@ -109,6 +109,30 @@ def cfg(sc,sid,st):
         sc["labels"]=[[34.5,40,"CAPTURED ONCE","g"]]
         sc["headers"]=[[0,"REAL RUN · mock PayPal","a"],[34.0,"SCRIPTED retry · mock PayPal","a"]]
         sc["notes"]=[[0,99,"REAL RUN, sped up · the clock is the real clock"]]
+    elif sid=="c2":
+        sc.update(rt0=0,panel=False,title="REAL RUN  ·  claude -p (Sonnet) → AgentPurse MCP, PayPal sandbox",clock=False)
+        a=st
+        tool="pay_596ebb0…"
+        sc["blocks"]=[dict(t=a[0]-0.2,kind="cmd",cps=60,text="$ python3 live/live_claude.py --scenario c --sandbox"),
+          dict(t=a[0]+1.9,kind="sys",text="task: pay the freelance designer (design-co) 2.00 USD for a revised logo"),
+          dict(t=a[1]+0.2,kind="call",lines=[["▶ check_budget","b"]]),
+          dict(t=a[1]+1.0,kind="res",lines=[["   cap 100.00/day · auto-approve ≤ 20.00 · gift_card blocked · PayPal: SANDBOX","g"]]),
+          dict(t=a[2]+0.2,kind="call",lines=[["▶ propose_payment","b"],["   design-co  ·  2.00  ·  design","w"],["   context: “Manager job: the freelance designer (payee id \"design-co\", …”","d"]]),
+          dict(t=a[2]+1.3,kind="res",lines=[["   status   PAYOUT_PENDING","a"],["   verdict  approve","g"],["   why      allow-listed payee, 2.00 within auto-approve limit","d"],["   payout   JTWGTV379RDL8","w"]]),
+          dict(t=a[3]+0.2,kind="call",lines=[["▶ payment_status  "+tool,"b"]]),
+          dict(t=a[3]+0.8,kind="res",lines=[["   status   PAYOUT_PENDING","a"],["   PayPal is still processing the payout; poll payment_status","d"]]),
+          dict(t=a[3]+1.9,kind="say",text="Still pending; polling once more."),
+          dict(t=a[3]+2.4,kind="call",lines=[["▶ payment_status  "+tool,"b"]]),
+          dict(t=a[3]+2.9,kind="res",lines=[["   status   PAYOUT_PENDING","a"]]),
+          dict(t=a[3]+3.6,kind="say2",lines=["The final status is not confirmed … The PayPal payout id is JTWGTV379RDL8.","I did not re-propose, so there is no double-pay risk.","No human step was needed."]),
+          dict(t=a[4]+0.2,kind="sys",text="[PayPal API, checked afterwards]  GET /v1/payments/payouts/JTWGTV379RDL8"),
+          dict(t=a[4]+0.8,kind="res",lines=[["   batch_status   PROCESSING     right after the run","a"]]),
+          dict(t=a[4]+2.0,kind="res",lines=[["   batch_status   SUCCESS        about 2 minutes later","g"]])]
+        sc["need"]=a[4]+4.6
+        beats(sc,st,[None]*5); sc["end_t"]=sc["need"]
+        sc["labels"]=[[a[2]+1.3,a[3]+3.6,"NO HUMAN STEP","g"],[a[4]+2.0,a[4]+99,"PROCESSING → SUCCESS","g"]]
+        sc["headers"]=[[0,"PAYPAL SANDBOX (real API, test money)","g"]]
+        sc["notes"]=[[0,99,"REAL RUN, from the logged transcript"]]
     elif sid=="e":
         sc.update(rt0=0,panel=False,title="AUDIT LOG  ·  python -m agentpurse.audit",clock=False)
         a=st; I=open("work/intact.out").read().strip().split("\n"); B=open("work/tamper.out").read().strip().split("\n")
@@ -127,10 +151,10 @@ def cfg(sc,sid,st):
         sc.update(rt0=0,panel=False,title="TESTS  ·  python3 -m unittest discover -s tests",clock=False)
         a=st
         sc["blocks"]=[dict(t=0.3,kind="cmd",text="$ python3 -m unittest discover -s tests"),
-          dict(t=1.7,kind="dots",n=167,dur=2.6),
-          dict(t=4.4,kind="res",lines=[["   Ran 167 tests in 11.2s","w"],["   OK","g"]]),
-          dict(t=4.5,kind="sys",text="(real run, 11 s; progress dots sped up)")]
-        beats(sc,st,[None]); sc["labels"]=[[4.4,99,"167 TESTS  ·  OK","g"]]
+          dict(t=1.7,kind="dots",n=189,dur=2.6),
+          dict(t=4.4,kind="res",lines=[["   Ran 189 tests in 19.3s","w"],["   OK","g"]]),
+          dict(t=4.5,kind="sys",text="(real run, 19 s; progress dots sped up)")]
+        beats(sc,st,[None]); sc["labels"]=[[4.4,99,"189 TESTS  ·  OK","g"]]
         sc["headers"]=[[0,"REAL COMMAND OUTPUT","a"]]
 SC,audio,TOTAL=build()
 json.dump(dict(scenes=SC,total=TOTAL),open("data.json","w"))
